@@ -70,8 +70,8 @@ export function GridEditor({
                             <span className="font-medium tabular-nums">
                               {formatMinutesShort(a.startMin)}–{formatMinutesShort(a.endMin)}
                             </span>
-                            <span className="text-[10px] opacity-70">
-                              {hoursFromMin(a.paidMinutes)}h{a.locked ? " · 🔒" : ""}
+                            <span className="text-[10px] opacity-70" title="Time at the store (start to end, incl. unpaid break)">
+                              {hoursFromMin(a.endMin - a.startMin)}h{a.locked ? " · 🔒" : ""}
                             </span>
                             {cell.length > 1 && <span className="text-[10px] text-amber-600">+{cell.length - 1} more</span>}
                           </span>

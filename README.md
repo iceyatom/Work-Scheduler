@@ -167,7 +167,7 @@ to the solver on every request). Mirrored as defaults in `solver/models.py`.
 | Late-night cap | ≤2 after per-day cutoff (hard): Mon 22:00, Tue 23:00, Wed 22:30, Thu 23:00, Fri–Sun 23:30 |
 | Daily labor | 70h min / 75h soft cap / 80h hard cap |
 | Shift length | 4–8.5h regular, ≤10.5h GM, ≤4h minor (school night) |
-| Unpaid lunch | one 30-min break per 5h worked (>5h → 1, 10h+ → 2) |
+| Unpaid lunch | one 30-min break per completed 5h (5h → 1, 10h+ → 2) |
 | Minor school nights | ≤4h and not past 10:00 PM (Sun–Thu nights) |
 | Days off | ≥2 per employee per week, i.e. ≤5 working days (hard) |
 

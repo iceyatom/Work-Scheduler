@@ -61,10 +61,11 @@ export interface ShiftLite {
 
 // --- Shift derivation ------------------------------------------------------
 
-/** Number of unpaid 30-min lunches: one per 5h worked (spec §4 + CA meal-break
- *  rule). 0–5h: none; >5h: 1; 10h+: 2 (one per 5-hour interval). */
+/** Number of unpaid 30-min lunches: one per completed 5h interval (spec §4 + CA
+ *  meal-break rule). <5h: none; 5h–<10h: 1; 10h+: 2. A shift of exactly 5h
+ *  completes one interval and so earns a break. */
 export function numBreaks(durationMin: number): number {
-  if (durationMin <= LUNCH_BREAK_THRESHOLD_MIN) return 0;
+  if (durationMin < LUNCH_BREAK_THRESHOLD_MIN) return 0;
   return Math.floor(durationMin / LUNCH_BREAK_THRESHOLD_MIN);
 }
 

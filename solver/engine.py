@@ -72,9 +72,9 @@ def snap(value: int, step: int) -> int:
 
 
 def num_breaks(duration: int, cfg: StoreConfig) -> int:
-    """One unpaid 30-min lunch per 5h worked (spec §4 + CA meal-break rule).
-    0–5h: none; >5h: 1; 10h+: 2 (one per 5-hour interval)."""
-    if duration <= cfg.lunchBreakThresholdMin:
+    """One unpaid 30-min lunch per completed 5h interval (spec §4 + CA meal-break
+    rule). <5h: none; 5h–<10h: 1; 10h+: 2. A shift of exactly 5h earns a break."""
+    if duration < cfg.lunchBreakThresholdMin:
         return 0
     return duration // cfg.lunchBreakThresholdMin
 

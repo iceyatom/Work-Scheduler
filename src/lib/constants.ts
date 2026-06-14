@@ -69,7 +69,7 @@ export const DAILY_LABOR_HARD_CAP_MIN = 80 * 60; // 4800  (hard cap)
 export const REGULAR_SHIFT_MIN_MIN = 4 * 60; // 240
 export const REGULAR_SHIFT_MAX_MIN = 8 * 60 + 30; // 510 (8.5h)
 export const GM_SHIFT_MAX_MIN = 10 * 60 + 30; // 630 (10.5h)
-export const LUNCH_BREAK_THRESHOLD_MIN = 5 * 60; // shifts OVER 5h get a break
+export const LUNCH_BREAK_THRESHOLD_MIN = 5 * 60; // one break per completed 5h (>=5h)
 export const LUNCH_BREAK_MIN = 30; // 30-min unpaid break
 
 // --- Minor school-night limits (spec §4) ----------------------------------
