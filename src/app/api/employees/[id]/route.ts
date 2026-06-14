@@ -1,15 +1,18 @@
 import { prisma } from "@/lib/prisma";
-import { handle, notFound, ok, badRequest } from "@/lib/api";
+import { handle, notFound, ok, badRequest, unauthorized } from "@/lib/api";
 import { employeeUpdate } from "@/lib/schemas";
 import { validateEmployee } from "@/lib/employee-validation";
+import { getSessionAccount } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   return handle(async () => {
-    const employee = await prisma.employee.findUnique({
-      where: { id: params.id },
+    const account = await getSessionAccount();
+    if (!account) return unauthorized();
+    const employee = await prisma.employee.findFirst({
+      where: { id: params.id, accountId: account.id },
       include: { availability: true, hardSets: true },
     });
     return employee ? ok(employee) : notFound("Employee not found");
@@ -18,6 +21,10 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   return handle(async () => {
+    const account = await getSessionAccount();
+    if (!account) return unauthorized();
+    const owned = await prisma.employee.findFirst({ where: { id: params.id, accountId: account.id }, select: { id: true } });
+    if (!owned) return notFound("Employee not found");
     const raw = (await req.json()) as Record<string, unknown>;
     const body = employeeUpdate.parse(raw);
     // Only replace nested collections that were actually present in the request
@@ -84,7 +91,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   return handle(async () => {
-    await prisma.employee.delete({ where: { id: params.id } });
-    return ok({ deleted: true });
+    const account = await getSessionAccount();
+    if (!account) return unauthorized();
+    const result = await prisma.employee.deleteMany({ where: { id: params.id, accountId: account.id } });
+    return result.count ? ok({ deleted: true }) : notFound("Employee not found");
   });
 }

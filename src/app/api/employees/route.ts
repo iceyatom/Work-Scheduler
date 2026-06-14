@@ -1,14 +1,18 @@
 import { prisma } from "@/lib/prisma";
-import { handle, ok, badRequest } from "@/lib/api";
+import { handle, ok, badRequest, unauthorized } from "@/lib/api";
 import { employeeInput } from "@/lib/schemas";
 import { validateEmployee } from "@/lib/employee-validation";
+import { getSessionAccount } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   return handle(async () => {
+    const account = await getSessionAccount();
+    if (!account) return unauthorized();
     const employees = await prisma.employee.findMany({
+      where: { accountId: account.id },
       orderBy: [{ isManager: "desc" }, { name: "asc" }],
       include: { availability: true, hardSets: true },
     });
@@ -18,6 +22,8 @@ export async function GET() {
 
 export async function POST(req: Request) {
   return handle(async () => {
+    const account = await getSessionAccount();
+    if (!account) return unauthorized();
     const body = employeeInput.parse(await req.json());
     const errors = validateEmployee({
       name: body.name,
@@ -31,6 +37,7 @@ export async function POST(req: Request) {
     if (errors.length) return badRequest("Employee validation failed", errors);
     const employee = await prisma.employee.create({
       data: {
+        accountId: account.id,
         name: body.name,
         employmentType: body.employmentType,
         // GM implies manager (the GM box overrides the manager box).

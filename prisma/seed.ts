@@ -15,8 +15,12 @@
 //     for traceability.
 
 import { PrismaClient, EmploymentType } from "@prisma/client";
+import { hashPassword, normalizeUsername } from "../src/lib/password";
 
 const prisma = new PrismaClient();
+
+const ACCOUNT_USERNAME = process.env.DEFAULT_ACCOUNT_USERNAME || "folsom";
+const ACCOUNT_PASSWORD = process.env.DEFAULT_ACCOUNT_PASSWORD || "Taco1234!";
 
 const T = (h: number, m = 0) => h * 60 + m;
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
@@ -197,7 +201,7 @@ const crew: Seed[] = [
 
 async function main() {
   console.log("Clearing existing data…");
-  // Order matters for FK constraints.
+  // Order matters for FK constraints. Accounts/sessions are preserved.
   await prisma.assignment.deleteMany();
   await prisma.job.deleteMany();
   await prisma.schedule.deleteMany();
@@ -206,10 +210,19 @@ async function main() {
   await prisma.hardSetAssignment.deleteMany();
   await prisma.employee.deleteMany();
 
-  console.log(`Seeding ${crew.length} employees…`);
+  // Default account that owns the seeded roster (so you can log in).
+  const usernameLower = normalizeUsername(ACCOUNT_USERNAME);
+  const account = await prisma.account.upsert({
+    where: { usernameLower },
+    update: {},
+    create: { username: ACCOUNT_USERNAME, usernameLower, passwordHash: hashPassword(ACCOUNT_PASSWORD) },
+  });
+
+  console.log(`Seeding ${crew.length} employees under account "${ACCOUNT_USERNAME}"…`);
   for (const s of crew) {
     await prisma.employee.create({
       data: {
+        accountId: account.id,
         name: s.name,
         employmentType: s.employmentType,
         // GM implies manager.
@@ -232,6 +245,7 @@ async function main() {
   const count = await prisma.employee.count();
   const managers = await prisma.employee.count({ where: { isManager: true } });
   console.log(`Done. ${count} employees (${managers} managers) in the database.`);
+  console.log(`Log in with:  username "${ACCOUNT_USERNAME}"  password "${ACCOUNT_PASSWORD}"`);
 }
 
 main()

@@ -1,15 +1,23 @@
 import { prisma } from "@/lib/prisma";
-import { handle, badRequest, ok } from "@/lib/api";
+import { handle, badRequest, ok, notFound, unauthorized } from "@/lib/api";
 import { assignmentUpsert } from "@/lib/schemas";
 import { deriveShift, recomputeGaps } from "@/lib/scheduling";
+import { getSessionAccount } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+async function ownsSchedule(scheduleId: string, accountId: string) {
+  return prisma.schedule.findFirst({ where: { id: scheduleId, accountId }, select: { id: true } });
+}
 
 // Manual edit from the grid / slider editor (spec §7.1, §7.5). Creates or
 // updates a single shift, recomputes the gap report, and returns both.
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
   return handle(async () => {
+    const account = await getSessionAccount();
+    if (!account) return unauthorized();
+    if (!(await ownsSchedule(params.id, account.id))) return notFound("Schedule not found");
     const body = assignmentUpsert.parse(await req.json());
     if (body.endMin <= body.startMin) return badRequest("End time must be after start time.");
 
@@ -43,10 +51,14 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
   return handle(async () => {
+    const account = await getSessionAccount();
+    if (!account) return unauthorized();
+    if (!(await ownsSchedule(params.id, account.id))) return notFound("Schedule not found");
     const url = new URL(req.url);
     const assignmentId = url.searchParams.get("assignmentId");
     if (!assignmentId) return badRequest("assignmentId query parameter is required.");
-    await prisma.assignment.delete({ where: { id: assignmentId } });
+    // Scope the delete to assignments of this (owned) schedule.
+    await prisma.assignment.deleteMany({ where: { id: assignmentId, scheduleId: params.id } });
     const gaps = await recomputeGaps(params.id);
     return ok({ gaps });
   });

@@ -137,19 +137,21 @@ async function persistSchedule(opts: {
   weekStartISO: string;
   generatedFrom: "BLANK" | "RESOLVE";
   jobType: "GENERATE" | "RESOLVE";
+  accountId: string;
   request: SolveRequest;
   response: SolveResponse;
 }) {
-  const { name, weekStartISO, generatedFrom, jobType, request, response } = opts;
+  const { name, weekStartISO, generatedFrom, jobType, accountId, request, response } = opts;
   const weekStart = new Date(weekStartISO + "T00:00:00.000Z");
 
   return prisma.$transaction(async (tx) => {
     const job = await tx.job.create({
-      data: { type: jobType, status: "RUNNING", request: request as unknown as Prisma.InputJsonValue },
+      data: { type: jobType, status: "RUNNING", accountId, request: request as unknown as Prisma.InputJsonValue },
     });
 
     const schedule = await tx.schedule.create({
       data: {
+        accountId,
         name,
         weekStart,
         generatedFrom,
@@ -181,8 +183,8 @@ async function persistSchedule(opts: {
 
 // --- F-1: generate from blank ----------------------------------------------
 
-export async function generateSchedule(opts: { name: string; weekStartISO: string }) {
-  const employees = await prisma.employee.findMany({ where: { active: true }, include: employeeInclude });
+export async function generateSchedule(opts: { name: string; weekStartISO: string; accountId: string }) {
+  const employees = await prisma.employee.findMany({ where: { active: true, accountId: opts.accountId }, include: employeeInclude });
   const solverEmployees = employees.map((e) => toSolverEmployee(e, opts.weekStartISO));
 
   const request: SolveRequest = {
@@ -197,6 +199,7 @@ export async function generateSchedule(opts: { name: string; weekStartISO: strin
     weekStartISO: opts.weekStartISO,
     generatedFrom: "BLANK",
     jobType: "GENERATE",
+    accountId: opts.accountId,
     request,
     response,
   });
@@ -204,13 +207,13 @@ export async function generateSchedule(opts: { name: string; weekStartISO: strin
 
 // --- F-2: incremental re-solve from queued changes -------------------------
 
-export async function resolveSchedule(opts: { scheduleId: string; name?: string }) {
-  const prior = await prisma.schedule.findUnique({ where: { id: opts.scheduleId }, include: { assignments: true } });
+export async function resolveSchedule(opts: { scheduleId: string; accountId: string; name?: string }) {
+  const prior = await prisma.schedule.findFirst({ where: { id: opts.scheduleId, accountId: opts.accountId }, include: { assignments: true } });
   if (!prior) throw new Error("Schedule not found");
   const weekStartISO = isoDate(new Date(prior.weekStart));
 
-  const employees = await prisma.employee.findMany({ where: { active: true }, include: employeeInclude });
-  const changes = await prisma.personnelChange.findMany({ where: { status: "QUEUED" } });
+  const employees = await prisma.employee.findMany({ where: { active: true, accountId: opts.accountId }, include: employeeInclude });
+  const changes = await prisma.personnelChange.findMany({ where: { status: "QUEUED", accountId: opts.accountId } });
 
   let solverEmployees = employees.map((e) => toSolverEmployee(e, weekStartISO));
   const { employees: survivingEmployees, removedIds } = applyChanges(solverEmployees, changes);
@@ -242,14 +245,15 @@ export async function resolveSchedule(opts: { scheduleId: string; name?: string 
     weekStartISO,
     generatedFrom: "RESOLVE",
     jobType: "RESOLVE",
+    accountId: opts.accountId,
     request,
     response,
   });
 
-  // Mark the applied changes & flip employee status for terminations.
+  // Mark the applied changes & flip employee status for terminations (scoped).
   await prisma.$transaction([
-    prisma.personnelChange.updateMany({ where: { status: "QUEUED" }, data: { status: "APPLIED" } }),
-    prisma.employee.updateMany({ where: { id: { in: [...removedIds] } }, data: { active: false } }),
+    prisma.personnelChange.updateMany({ where: { status: "QUEUED", accountId: opts.accountId }, data: { status: "APPLIED" } }),
+    prisma.employee.updateMany({ where: { id: { in: [...removedIds] }, accountId: opts.accountId }, data: { active: false } }),
   ]);
 
   return schedule;
@@ -264,7 +268,7 @@ export async function recomputeGaps(scheduleId: string): Promise<GapItem[]> {
   const schedule = await prisma.schedule.findUnique({ where: { id: scheduleId }, include: { assignments: true } });
   if (!schedule) throw new Error("Schedule not found");
 
-  const employees = await prisma.employee.findMany({ include: { availability: true } });
+  const employees = await prisma.employee.findMany({ where: { accountId: schedule.accountId }, include: { availability: true } });
   const empLite: EmployeeLite[] = employees.map((e) => ({
     id: e.id,
     name: e.name,

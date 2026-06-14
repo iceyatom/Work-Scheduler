@@ -68,10 +68,18 @@ npm run setup
 npm run dev
 ```
 
-Then open **http://localhost:3000**.
+Then open **http://localhost:3000** — you'll land on the marketing/login page.
 
-`.env` is already present with local defaults. Click **Generate schedule** on the
-dashboard to run the solver against the seeded crew.
+**Log in** with the seeded account (printed by the seed):
+
+> username **`folsom`** · password **`Taco1234!`**
+
+…or click **Create account** to register a new company (its roster/schedules start
+empty and are isolated from every other account). After logging in you're taken to
+the dashboard; click **Generate schedule** to run the solver against your crew.
+
+`.env` is already present with local defaults (including the default account
+credentials, which you can change there).
 
 > First solve takes a few seconds (the CP-SAT time limit defaults to 15s). The
 > seeded roster is intentionally a little tight on managers/late-night coverage so
@@ -85,6 +93,30 @@ npm run dev                 # start the app
 # ...work...
 docker compose down         # stop the stack (data persists in a volume)
 ```
+
+---
+
+## Accounts & security
+
+Each company logs in to its own **account**; all employees, schedules, and change
+queues are scoped to it (one account can never see another's data). Auth is
+session-cookie based:
+
+- **Passwords** are hashed with **scrypt** + a per-user random salt (never stored
+  in plaintext) and must be 8+ chars with upper, lower, a digit, and a special
+  character. Usernames are unique (case-insensitive).
+- **Lockout**: 5 consecutive failed logins lock the account for 15 minutes.
+- **"Stay logged in"** sets a 30-day persistent cookie; unchecked uses a
+  browser-session cookie that clears on close. The cookie is `httpOnly` +
+  `SameSite=lax` (and `Secure` in production).
+- The landing page (`/`) is public; `/dashboard`, `/employees`, `/changes`,
+  `/schedule/*` require a session (enforced by middleware + per-route checks).
+
+Tuning lives in `src/lib/auth.ts` (`LOCKOUT_THRESHOLD`, `LOCKOUT_MINUTES`, cookie
+lifetimes) and `src/lib/password.ts` (the password/username rules).
+
+The whole UI is responsive (mobile / portrait / landscape) — the landing page,
+nav, dashboard, and editors reflow, and the wide grid/timeline scroll horizontally.
 
 ---
 
@@ -184,7 +216,8 @@ to the solver on every request). Mirrored as defaults in `solver/models.py`.
 | `npm run dev` | Start Next.js dev server |
 | `npm run build` | Production build / full typecheck |
 | `npm run setup` | `prisma generate` + `db push` + seed |
-| `npm run db:seed` | Re-seed the example crew (wipes & re-creates) |
+| `npm run db:seed` | Re-seed the example crew under the default account (wipes & re-creates) |
+| `npm run db:backfill` | Attach pre-auth rows to the default account (idempotent, non-destructive) |
 | `npm run db:studio` | Open Prisma Studio (browse/edit the DB) |
 | `npm run db:reset` | Drop, re-create, migrate & seed |
 
@@ -234,8 +267,15 @@ cd solver && uvicorn app:app --reload --port 8000
 
 ## API reference (local)
 
+All routes below require a valid session cookie and operate only on the signed-in
+account's data (401 otherwise).
+
 | Method | Route | Purpose |
 |--------|-------|---------|
+| `POST` | `/api/auth/register` | Create an account (auto-login) |
+| `POST` | `/api/auth/login` | Log in (lockout after 5 fails); `stayLoggedIn` for a persistent cookie |
+| `POST` | `/api/auth/logout` | Log out (clears session) |
+| `GET` | `/api/auth/me` | Current account, or 401 |
 | `GET/POST` | `/api/employees` | List / create employees |
 | `GET/PATCH/DELETE` | `/api/employees/:id` | Read / update / delete |
 | `GET` | `/api/schedules` | List schedules |

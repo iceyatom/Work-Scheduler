@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { handle, notFound, ok } from "@/lib/api";
+import { handle, notFound, ok, unauthorized } from "@/lib/api";
+import { getSessionAccount } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,13 +10,16 @@ export const dynamic = "force-dynamic";
 // recompute the gap report locally after manual edits.
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   return handle(async () => {
-    const schedule = await prisma.schedule.findUnique({
-      where: { id: params.id },
+    const account = await getSessionAccount();
+    if (!account) return unauthorized();
+    const schedule = await prisma.schedule.findFirst({
+      where: { id: params.id, accountId: account.id },
       include: { assignments: { orderBy: [{ dayOfWeek: "asc" }, { startMin: "asc" }] } },
     });
     if (!schedule) return notFound("Schedule not found");
 
     const employees = await prisma.employee.findMany({
+      where: { accountId: account.id },
       include: { availability: true },
       orderBy: [{ isManager: "desc" }, { name: "asc" }],
     });
@@ -36,7 +40,9 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   return handle(async () => {
-    await prisma.schedule.delete({ where: { id: params.id } });
-    return ok({ deleted: true });
+    const account = await getSessionAccount();
+    if (!account) return unauthorized();
+    const result = await prisma.schedule.deleteMany({ where: { id: params.id, accountId: account.id } });
+    return result.count ? ok({ deleted: true }) : notFound("Schedule not found");
   });
 }

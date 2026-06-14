@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
-import { handle, notFound } from "@/lib/api";
+import { handle, notFound, unauthorized } from "@/lib/api";
 import { DAY_NAMES } from "@/lib/constants";
+import { getSessionAccount } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,13 +24,15 @@ function csvCell(v: string | number): string {
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   return handle(async () => {
-    const schedule = await prisma.schedule.findUnique({
-      where: { id: params.id },
+    const account = await getSessionAccount();
+    if (!account) return unauthorized();
+    const schedule = await prisma.schedule.findFirst({
+      where: { id: params.id, accountId: account.id },
       include: { assignments: { orderBy: [{ dayOfWeek: "asc" }, { startMin: "asc" }] } },
     });
     if (!schedule) return notFound("Schedule not found");
 
-    const employees = await prisma.employee.findMany();
+    const employees = await prisma.employee.findMany({ where: { accountId: account.id } });
     const empById = new Map(employees.map((e) => [e.id, e]));
     const weekStart = new Date(schedule.weekStart);
 

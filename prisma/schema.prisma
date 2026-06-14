@@ -13,6 +13,43 @@ datasource db {
 }
 
 // ---------------------------------------------------------------------------
+// Accounts & sessions (multi-tenant auth). Each company logs in to its own
+// account; all employees/schedules/changes are scoped to it.
+// ---------------------------------------------------------------------------
+
+model Account {
+  id            String  @id @default(cuid())
+  username      String  @unique // as entered (for display)
+  usernameLower String  @unique // normalized for case-insensitive lookup/uniqueness
+  passwordHash  String // scrypt salt:hash (never store plaintext)
+
+  // Lockout after too many failed logins.
+  failedAttempts Int       @default(0)
+  lockedUntil    DateTime?
+
+  employees        Employee[]
+  schedules        Schedule[]
+  personnelChanges PersonnelChange[]
+  jobs             Job[]
+  sessions         Session[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// One row per logged-in browser session; token lives in an httpOnly cookie.
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([accountId])
+}
+
+// ---------------------------------------------------------------------------
 // People & personnel inputs (spec §5)
 // ---------------------------------------------------------------------------
 
@@ -23,6 +60,10 @@ enum EmploymentType {
 
 model Employee {
   id             String         @id @default(cuid())
+  // Owning account. Nullable only to allow zero-downtime backfill of pre-auth
+  // rows; application code always sets and filters by it.
+  account        Account?       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId      String?
   name           String
   employmentType EmploymentType @default(PART_TIME)
   isManager      Boolean        @default(false) // can satisfy the manager-presence rule
@@ -45,6 +86,8 @@ model Employee {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([accountId])
 }
 
 // Recurring weekly windows the person can work (spec §5 "general availability").
@@ -91,6 +134,8 @@ enum GeneratedFrom {
 
 model Schedule {
   id            String         @id @default(cuid())
+  account       Account?       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId     String?
   name          String
   weekStart     DateTime       @db.Date // Monday of the scheduled week
   status        ScheduleStatus @default(DRAFT)
@@ -109,6 +154,8 @@ model Schedule {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([accountId])
 }
 
 enum AssignmentSource {
@@ -161,6 +208,8 @@ enum ChangeStatus {
 
 model PersonnelChange {
   id         String       @id @default(cuid())
+  account    Account?     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId  String?
   employee   Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   employeeId String
   type       ChangeType
@@ -179,6 +228,7 @@ model PersonnelChange {
 
   @@index([employeeId])
   @@index([status])
+  @@index([accountId])
 }
 
 // ---------------------------------------------------------------------------
@@ -200,6 +250,8 @@ enum JobStatus {
 
 model Job {
   id         String    @id @default(cuid())
+  account    Account?  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId  String?
   type       JobType
   status     JobStatus @default(QUEUED)
   schedule   Schedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
@@ -210,4 +262,6 @@ model Job {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([accountId])
 }

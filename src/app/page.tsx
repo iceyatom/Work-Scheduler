@@ -1,149 +1,99 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { Button, Card, Spinner, Badge, ErrorBanner } from "@/components/ui";
-import { getJSON, sendJSON } from "@/lib/client";
-import { mondayOf, isoDate } from "@/lib/time";
-import type { ScheduleSummary } from "@/lib/view-types";
-import type { GapItem } from "@/lib/types";
+import { AuthPanel } from "@/components/AuthPanel";
 
-function gapCounts(gaps: GapItem[] | null) {
-  const blocking = gaps?.filter((g) => g.severity === "BLOCKING").length ?? 0;
-  const warning = gaps?.filter((g) => g.severity === "WARNING").length ?? 0;
-  return { blocking, warning };
-}
+const FEATURES = [
+  { icon: "🧩", title: "Constraint-based solver", desc: "OR-Tools CP-SAT builds an optimal weekly schedule honoring coverage, labor, and shift rules." },
+  { icon: "👔", title: "Managers first", desc: "Managers and the GM are placed first for even, gap-free coverage, then crew fill in around them." },
+  { icon: "🛠️", title: "Edit with live validation", desc: "Drag shifts in the grid or slider editor and see rule violations the instant they happen." },
+  { icon: "📋", title: "Gap report & Tracks export", desc: "See exactly what's unmet, then export an import-ready file for Taco Bell Tracks." },
+];
 
-export default function DashboardPage() {
+const STATS = [
+  { value: "70–80h", label: "daily labor band" },
+  { value: "15-min", label: "scheduling slots" },
+  { value: "2", label: "days off / week" },
+];
+
+export default function LandingPage() {
   const router = useRouter();
-  const [schedules, setSchedules] = useState<ScheduleSummary[]>([]);
-  const [empCount, setEmpCount] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const [name, setName] = useState("Weekly schedule");
-  const [weekStart, setWeekStart] = useState(() => isoDate(mondayOf(new Date())));
-
-  async function load() {
-    try {
-      const [s, emps] = await Promise.all([getJSON<ScheduleSummary[]>("/api/schedules"), getJSON<unknown[]>("/api/employees")]);
-      setSchedules(s);
-      setEmpCount(emps.length);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
+  // Already signed in? Skip straight to the app.
   useEffect(() => {
-    load();
-  }, []);
-
-  async function generate() {
-    setGenerating(true);
-    setError(null);
-    try {
-      const schedule = await sendJSON<{ id: string }>("/api/schedules/generate", "POST", { name, weekStart });
-      router.push(`/schedule/${schedule.id}`);
-    } catch (e) {
-      setError((e as Error).message);
-      setGenerating(false);
-    }
-  }
-
-  async function remove(id: string) {
-    if (!confirm("Delete this schedule?")) return;
-    await sendJSON(`/api/schedules/${id}`, "DELETE");
-    load();
-  }
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then((r) => {
+        if (r.ok) router.replace("/dashboard");
+      })
+      .catch(() => {});
+  }, [router]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-end justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-          <p className="text-sm text-slate-500">Generate and manage weekly store schedules.</p>
-        </div>
-        <Link href="/employees" className="text-sm font-medium text-brand hover:underline">
-          {empCount ?? "…"} employees →
-        </Link>
-      </div>
+    <div className="-mx-4 -my-6">
+      {/* Hero */}
+      <section className="animated-gradient relative overflow-hidden">
+        <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-brand/10 blur-3xl animate-float" aria-hidden />
+        <div className="pointer-events-none absolute -bottom-24 left-1/3 h-72 w-72 rounded-full bg-indigo-300/20 blur-3xl animate-float" style={{ animationDelay: "2s" }} aria-hidden />
 
-      {error && <ErrorBanner message={error} />}
-
-      <Card className="p-5">
-        <h2 className="mb-1 text-lg font-semibold text-slate-900">Generate a new schedule</h2>
-        <p className="mb-4 text-sm text-slate-500">
-          F-1 · builds an optimal weekly schedule from a blank slate using the current roster and availability.
-        </p>
-        <div className="flex flex-wrap items-end gap-4">
-          <label className="text-sm">
-            <span className="mb-1 block font-medium text-slate-600">Name</span>
-            <input className="w-56 rounded-md border border-slate-300 px-3 py-2" value={name} onChange={(e) => setName(e.target.value)} />
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block font-medium text-slate-600">Week starting (Mon)</span>
-            <input type="date" className="rounded-md border border-slate-300 px-3 py-2" value={weekStart} onChange={(e) => setWeekStart(e.target.value)} />
-          </label>
-          <Button onClick={generate} disabled={generating || (empCount ?? 0) === 0}>
-            {generating ? (
-              <>
-                <Spinner /> Solving…
-              </>
-            ) : (
-              "Generate schedule"
-            )}
-          </Button>
-          {generating && <span className="text-sm text-slate-500">The CP-SAT solver may take a few seconds.</span>}
-        </div>
-        {(empCount ?? 0) === 0 && !loading && (
-          <p className="mt-3 text-sm text-amber-700">No employees yet — add some on the Employees page (or run the seed) before generating.</p>
-        )}
-      </Card>
-
-      <Card>
-        <div className="border-b border-slate-100 px-5 py-3">
-          <h2 className="text-lg font-semibold text-slate-900">Schedules</h2>
-        </div>
-        {loading ? (
-          <div className="flex items-center gap-2 px-5 py-8 text-slate-500">
-            <Spinner /> Loading…
+        <div className="mx-auto grid max-w-7xl items-center gap-10 px-4 py-14 lg:grid-cols-2 lg:py-24">
+          {/* Copy */}
+          <div>
+            <span className="animate-fade-up inline-flex items-center rounded-full bg-white/70 px-3 py-1 text-xs font-medium text-brand-dark ring-1 ring-brand/20" style={{ animationDelay: "0ms" }}>
+              For quick-service restaurant managers
+            </span>
+            <h1 className="animate-fade-up mt-4 text-4xl font-extrabold leading-tight tracking-tight text-slate-900 sm:text-5xl" style={{ animationDelay: "80ms" }}>
+              Build a week&apos;s schedule in <span className="text-brand">seconds</span>, not hours.
+            </h1>
+            <p className="animate-fade-up mt-4 max-w-xl text-lg text-slate-600" style={{ animationDelay: "160ms" }}>
+              The Schedule Generator turns your roster, availability, and coverage rules into an optimized, import-ready weekly
+              schedule — and shows you exactly what it couldn&apos;t satisfy.
+            </p>
+            <dl className="animate-fade-up mt-8 flex flex-wrap gap-x-8 gap-y-4" style={{ animationDelay: "240ms" }}>
+              {STATS.map((s) => (
+                <div key={s.label}>
+                  <dt className="text-2xl font-bold text-slate-900">{s.value}</dt>
+                  <dd className="text-sm text-slate-500">{s.label}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
-        ) : schedules.length === 0 ? (
-          <p className="px-5 py-8 text-sm text-slate-500">No schedules yet. Generate one above.</p>
-        ) : (
-          <ul className="divide-y divide-slate-100">
-            {schedules.map((s) => {
-              const { blocking, warning } = gapCounts(s.gaps);
-              return (
-                <li key={s.id} className="flex items-center justify-between px-5 py-3 hover:bg-slate-50">
-                  <Link href={`/schedule/${s.id}`} className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-slate-900">{s.name}</span>
-                      <Badge color={s.generatedFrom === "RESOLVE" ? "blue" : "purple"}>{s.generatedFrom === "RESOLVE" ? "Re-solved" : "Generated"}</Badge>
-                      <Badge color="slate">{s.solverStatus ?? "—"}</Badge>
-                    </div>
-                    <div className="mt-0.5 text-xs text-slate-500">
-                      Week of {s.weekStart.slice(0, 10)} · {s._count?.assignments ?? 0} shifts · solved in {s.solveMs ?? "—"} ms
-                    </div>
-                  </Link>
-                  <div className="flex items-center gap-2">
-                    {blocking > 0 && <Badge color="red">{blocking} blocking</Badge>}
-                    {warning > 0 && <Badge color="amber">{warning} warnings</Badge>}
-                    {blocking === 0 && warning === 0 && <Badge color="green">No gaps</Badge>}
-                    <Button variant="ghost" onClick={() => remove(s.id)} className="text-red-600 hover:bg-red-50">
-                      Delete
-                    </Button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Card>
+
+          {/* Auth */}
+          <div className="animate-fade-up mx-auto w-full max-w-md" style={{ animationDelay: "200ms" }}>
+            <AuthPanel />
+            <p className="mt-3 text-center text-xs text-slate-500">Your roster and schedules are saved to your account.</p>
+          </div>
+        </div>
+      </section>
+
+      {/* Features */}
+      <section className="mx-auto max-w-7xl px-4 py-16">
+        <h2 className="text-center text-2xl font-bold text-slate-900">Everything a store manager needs</h2>
+        <p className="mx-auto mt-2 max-w-2xl text-center text-slate-500">
+          Coverage targets, manager presence, minor labor laws, breaks, and days off — all handled, with a manager-friendly editor on top.
+        </p>
+        <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          {FEATURES.map((f, i) => (
+            <div
+              key={f.title}
+              className="animate-fade-up rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-transform duration-200 hover:-translate-y-1 hover:shadow-md"
+              style={{ animationDelay: `${i * 90}ms` }}
+            >
+              <div className="grid h-11 w-11 place-items-center rounded-lg bg-brand-light text-2xl">{f.icon}</div>
+              <h3 className="mt-4 font-semibold text-slate-900">{f.title}</h3>
+              <p className="mt-1 text-sm text-slate-500">{f.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="border-t border-slate-200 bg-white">
+        <div className="mx-auto max-w-7xl px-4 py-8 text-center text-sm text-slate-400">
+          Work Schedule Generator · constraint-based scheduling for quick-service restaurants
+        </div>
+      </footer>
     </div>
   );
 }

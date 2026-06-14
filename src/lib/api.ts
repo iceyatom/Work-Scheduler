@@ -13,6 +13,18 @@ export function notFound(message = "Not found") {
   return NextResponse.json({ error: message }, { status: 404 });
 }
 
+export function unauthorized(message = "Not signed in") {
+  return NextResponse.json({ error: message }, { status: 401 });
+}
+
+export function conflict(message: string) {
+  return NextResponse.json({ error: message }, { status: 409 });
+}
+
+export function locked(message: string) {
+  return NextResponse.json({ error: message }, { status: 423 });
+}
+
 export function serverError(message: string) {
   return NextResponse.json({ error: message }, { status: 500 });
 }

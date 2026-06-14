@@ -1,5 +1,6 @@
-import { handle, ok } from "@/lib/api";
+import { handle, ok, unauthorized } from "@/lib/api";
 import { resolveSchedule } from "@/lib/scheduling";
+import { getSessionAccount } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,7 +10,9 @@ export const maxDuration = 60;
 // new incrementally re-solved schedule with minimal disruption (spec §6, §8).
 export async function POST(_req: Request, { params }: { params: { id: string } }) {
   return handle(async () => {
-    const schedule = await resolveSchedule({ scheduleId: params.id });
+    const account = await getSessionAccount();
+    if (!account) return unauthorized();
+    const schedule = await resolveSchedule({ scheduleId: params.id, accountId: account.id });
     return ok(schedule, { status: 201 });
   });
 }
