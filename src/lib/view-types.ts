@@ -10,7 +10,7 @@ export interface AssignmentRow {
   dayOfWeek: number;
   startMin: number;
   endMin: number;
-  breakStartMin: number | null;
+  breakStarts: number[];
   paidMinutes: number;
   locked: boolean;
   source: "SOLVER" | "MANUAL" | "HARDSET";

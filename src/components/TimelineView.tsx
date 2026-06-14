@@ -42,13 +42,13 @@ export function TimelineView({ detail }: { detail: ScheduleDetail }) {
     dayOfWeek: a.dayOfWeek,
     startMin: a.startMin,
     endMin: a.endMin,
-    breakStartMin: a.breakStartMin,
+    breakStarts: a.breakStarts,
     paidMinutes: a.paidMinutes,
   }));
 
   const dayAssignments = detail.assignments.filter((a) => a.dayOfWeek === day).sort((a, b) => a.startMin - b.startMin);
   const rowEmployeeIds = Array.from(new Set(dayAssignments.map((a) => a.employeeId)));
-  const { staff, managers } = coverageForDay(shifts, empById, day);
+  const { staff, managerPresent } = coverageForDay(shifts, empById, day);
   const cutoff = LATE_NIGHT_CUTOFF_MIN[day];
 
   const hourTicks: number[] = [];
@@ -107,16 +107,17 @@ export function TimelineView({ detail }: { detail: ScheduleDetail }) {
                       <span className="absolute inset-0 flex items-center justify-center truncate px-1">
                         {formatMinutesShort(a.startMin)}–{formatMinutesShort(a.endMin)}
                       </span>
-                      {a.breakStartMin != null && (
+                      {a.breakStarts.map((b) => (
                         <div
+                          key={b}
                           className="absolute inset-y-0 bg-white/40"
                           style={{
-                            left: `${((a.breakStartMin - a.startMin) / (a.endMin - a.startMin)) * 100}%`,
+                            left: `${((b - a.startMin) / (a.endMin - a.startMin)) * 100}%`,
                             width: `${(30 / (a.endMin - a.startMin)) * 100}%`,
                           }}
-                          title="Unpaid break"
+                          title="Unpaid 30-min break"
                         />
-                      )}
+                      ))}
                     </div>
                   ))}
                 </div>
@@ -139,7 +140,7 @@ export function TimelineView({ detail }: { detail: ScheduleDetail }) {
                   key={s}
                   className={clsx("flex-1", color, count === 0 && "bg-slate-100")}
                   style={{ height: `${Math.min(count, 6) * 16}%` }}
-                  title={`${formatMinutesShort(slotStart)} · ${count} staff${managers[s] ? "" : " · no manager"}`}
+                  title={`${formatMinutesShort(slotStart)} · ${count} staff${managerPresent[s] ? "" : " · no manager"}`}
                 />
               );
             })}
@@ -150,7 +151,7 @@ export function TimelineView({ detail }: { detail: ScheduleDetail }) {
           <div className="w-40 shrink-0 pr-2 text-xs font-medium text-slate-500">Manager present</div>
           <div className="relative flex h-3 flex-1">
             {Array.from({ length: SLOTS_PER_DAY }).map((_, s) => (
-              <div key={s} className={clsx("flex-1", managers[s] > 0 ? "bg-brand" : staff[s] > 0 ? "bg-red-400" : "bg-slate-100")} title={managers[s] > 0 ? "manager on site" : "no manager"} />
+              <div key={s} className={clsx("flex-1", managerPresent[s] > 0 ? "bg-brand" : staff[s] > 0 ? "bg-red-400" : "bg-slate-100")} title={managerPresent[s] > 0 ? "manager on site" : "no manager"} />
             ))}
           </div>
         </div>

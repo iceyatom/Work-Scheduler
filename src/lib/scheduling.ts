@@ -164,7 +164,7 @@ async function persistSchedule(opts: {
             dayOfWeek: a.dayOfWeek,
             startMin: a.startMin,
             endMin: a.endMin,
-            breakStartMin: a.breakStartMin,
+            breakStarts: a.breakStarts,
             paidMinutes: a.paidMinutes,
             locked: a.locked,
             source: a.source,
@@ -222,7 +222,7 @@ export async function resolveSchedule(opts: { scheduleId: string; name?: string 
       dayOfWeek: a.dayOfWeek,
       startMin: a.startMin,
       endMin: a.endMin,
-      breakStartMin: a.breakStartMin,
+      breakStarts: a.breakStarts,
       paidMinutes: a.paidMinutes,
       locked: a.locked,
       source: a.source,
@@ -278,7 +278,7 @@ export async function recomputeGaps(scheduleId: string): Promise<GapItem[]> {
     dayOfWeek: a.dayOfWeek,
     startMin: a.startMin,
     endMin: a.endMin,
-    breakStartMin: a.breakStartMin,
+    breakStarts: a.breakStarts,
     paidMinutes: a.paidMinutes,
   }));
 

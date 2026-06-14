@@ -74,7 +74,7 @@ class Assignment(BaseModel):
     dayOfWeek: int
     startMin: int
     endMin: int
-    breakStartMin: Optional[int] = None
+    breakStarts: list[int] = []
     paidMinutes: int
     locked: bool = False
     source: Literal["SOLVER", "MANUAL", "HARDSET"] = "SOLVER"

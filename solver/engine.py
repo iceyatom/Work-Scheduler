@@ -23,13 +23,16 @@ from ortools.sat.python import cp_model
 from models import Assignment, Employee, GapItem, SolveRequest, SolveResponse, StoreConfig
 
 # --- Objective weights (heuristic; tune freely) ----------------------------
-W_MANAGER = 1000      # per missing manager, per slot
+W_MANAGER = 1000      # per missing manager, per slot (phase 1) — drives an even
+                      # spread of managers across all open hours
 W_BASE_FLOOR = 250    # per staff below the hard floor (3), per slot
 W_BASE_TARGET = 25    # per staff below the baseline target (4), per slot
 W_RUSH = 40           # per staff below the rush target (5), per rush slot
 W_LABOR_MIN = 2       # per minute below the daily 70h minimum
 W_LABOR_OVER = 3      # per minute over the daily 75h soft cap
 W_MINHOURS = 1        # per minute an employee is below their weekly minimum
+W_MINHOURS_MGR = 8    # stronger weight so managers get lengthy enough shifts to
+                      # meet their weekly minimum (phase 1)
 W_PRIORITY = 1        # reward per priority-point * hour assigned
 # RESOLVE-mode stability weights
 W_STABILITY = 2000    # reward for keeping an identical existing shift
@@ -43,9 +46,10 @@ class Candidate:
     day: int
     start: int
     end: int
-    break_start: int | None
+    break_starts: list[int]
     paid: int
-    slots: list[int]
+    slots: list[int]  # active (excludes breaks)
+    span: list[int]   # all slots start..end (manager-on-break still on premises)
     is_manager: bool
     coeff: int = 0  # per-candidate objective coefficient (prefs + priority)
 
@@ -56,9 +60,10 @@ class FixedShift:
     day: int
     start: int
     end: int
-    break_start: int | None
+    break_starts: list[int]
     paid: int
-    slots: list[int]
+    slots: list[int]  # active (excludes breaks)
+    span: list[int]   # all slots start..end
     is_manager: bool
 
 
@@ -66,27 +71,50 @@ def snap(value: int, step: int) -> int:
     return int(round(value / step)) * step
 
 
-def derive_break(start: int, end: int, cfg: StoreConfig) -> tuple[int | None, int]:
-    """Unpaid 30-min lunch for shifts over 5h, centred & slot-aligned (spec §4)."""
+def num_breaks(duration: int, cfg: StoreConfig) -> int:
+    """One unpaid 30-min lunch per 5h worked (spec §4 + CA meal-break rule).
+    0–5h: none; >5h: 1; 10h+: 2 (one per 5-hour interval)."""
+    if duration <= cfg.lunchBreakThresholdMin:
+        return 0
+    return duration // cfg.lunchBreakThresholdMin
+
+
+def derive_breaks(start: int, end: int, cfg: StoreConfig) -> tuple[list[int], int]:
+    """Unpaid lunches & paid minutes for a shift; breaks split the shift into
+    roughly equal work segments. Returns (break start minutes, paid)."""
     duration = end - start
-    if duration > cfg.lunchBreakThresholdMin:
-        b = snap(start + duration // 2 - cfg.lunchBreakMin // 2, cfg.slotMinutes)
-        b = max(start + cfg.slotMinutes, min(b, end - cfg.slotMinutes - cfg.lunchBreakMin))
-        return b, duration - cfg.lunchBreakMin
-    return None, duration
+    n = num_breaks(duration, cfg)
+    breaks: list[int] = []
+    if n > 0:
+        seg = duration // (n + 1)
+        for i in range(1, n + 1):
+            b = snap(start + i * seg - cfg.lunchBreakMin // 2, cfg.slotMinutes)
+            lo = breaks[-1] + cfg.lunchBreakMin + cfg.slotMinutes if breaks else start + cfg.slotMinutes
+            hi = end - cfg.slotMinutes - cfg.lunchBreakMin
+            b = max(lo, min(b, hi))
+            breaks.append(b)
+    return breaks, duration - n * cfg.lunchBreakMin
 
 
-def covered_slots(start: int, end: int, break_start: int | None, cfg: StoreConfig) -> list[int]:
-    slots: list[int] = []
-    n = cfg.slotsPerDay
-    for s in range(n):
+def span_slots(start: int, end: int, cfg: StoreConfig) -> list[int]:
+    """All slots within [start, end), ignoring breaks (person on premises)."""
+    out: list[int] = []
+    for s in range(cfg.slotsPerDay):
         slot_min = cfg.storeOpenMin + s * cfg.slotMinutes
-        if slot_min < start or slot_min + cfg.slotMinutes > end:
+        if start <= slot_min and slot_min + cfg.slotMinutes <= end:
+            out.append(s)
+    return out
+
+
+def covered_slots(start: int, end: int, break_starts: list[int], cfg: StoreConfig) -> list[int]:
+    """Actively-staffed slots: spanned and not within any unpaid break."""
+    out: list[int] = []
+    for s in span_slots(start, end, cfg):
+        slot_min = cfg.storeOpenMin + s * cfg.slotMinutes
+        if any(b <= slot_min < b + cfg.lunchBreakMin for b in break_starts):
             continue
-        if break_start is not None and break_start <= slot_min < break_start + cfg.lunchBreakMin:
-            continue
-        slots.append(s)
-    return slots
+        out.append(s)
+    return out
 
 
 def priority_score(emp: Employee) -> int:
@@ -133,16 +161,17 @@ def generate_candidates(emp: Employee, day: int, cfg: StoreConfig) -> list[Candi
                 if key in seen:
                     continue
                 seen.add(key)
-                bstart, paid = derive_break(start, end, cfg)
+                breaks, paid = derive_breaks(start, end, cfg)
                 out.append(
                     Candidate(
                         emp_id=emp.id,
                         day=day,
                         start=start,
                         end=end,
-                        break_start=bstart,
+                        break_starts=breaks,
                         paid=paid,
-                        slots=covered_slots(start, end, bstart, cfg),
+                        slots=covered_slots(start, end, breaks, cfg),
+                        span=span_slots(start, end, cfg),
                         is_manager=emp.isManager,
                     )
                 )
@@ -166,16 +195,17 @@ def build_fixed_and_candidates(req: SolveRequest) -> Model:
         hardset_days = {h.dayOfWeek for h in emp.hardSets}
         # Hard-set shifts are fixed constants (spec §5).
         for h in emp.hardSets:
-            bstart, paid = derive_break(h.startMin, h.endMin, cfg)
+            breaks, paid = derive_breaks(h.startMin, h.endMin, cfg)
             m.fixed.append(
                 FixedShift(
                     emp_id=emp.id,
                     day=h.dayOfWeek,
                     start=h.startMin,
                     end=h.endMin,
-                    break_start=bstart,
+                    break_starts=breaks,
                     paid=paid,
-                    slots=covered_slots(h.startMin, h.endMin, bstart, cfg),
+                    slots=covered_slots(h.startMin, h.endMin, breaks, cfg),
+                    span=span_slots(h.startMin, h.endMin, cfg),
                     is_manager=emp.isManager,
                 )
             )
@@ -199,43 +229,67 @@ def apply_objective_coeffs(m: Model, req: SolveRequest) -> None:
             c.coeff -= W_STABILITY
 
 
-def solve(req: SolveRequest) -> SolveResponse:
-    t0 = time.time()
-    cfg = req.config
-    m = build_fixed_and_candidates(req)
-    model = cp_model.CpModel()
-    apply_objective_coeffs(m, req)
+def _assignment_to_fixed(a: Assignment, cfg: StoreConfig, is_manager: bool) -> FixedShift:
+    """Turn a chosen assignment into a constant shift for a later phase."""
+    return FixedShift(
+        emp_id=a.employeeId,
+        day=a.dayOfWeek,
+        start=a.startMin,
+        end=a.endMin,
+        break_starts=a.breakStarts,
+        paid=a.paidMinutes,
+        slots=covered_slots(a.startMin, a.endMin, a.breakStarts, cfg),
+        span=span_slots(a.startMin, a.endMin, cfg),
+        is_manager=is_manager,
+    )
 
-    num_emp = max(1, len(req.employees))
-    x: list[cp_model.IntVar] = [model.NewBoolVar(f"x{i}") for i in range(len(m.candidates))]
+
+def _solve_phase(
+    cfg: StoreConfig,
+    decision_employees: list[Employee],
+    candidates: list[Candidate],
+    fixed: list[FixedShift],
+    mode: str,
+    existing,
+    time_limit: float,
+    manager_phase: bool,
+) -> tuple[list[Assignment], str, "float | None"]:
+    """Build & solve one phase. ``candidates`` are the decision shifts; ``fixed``
+    are constant shifts (hard-sets, and in the crew phase the managers already
+    placed by phase 1). Returns (chosen assignments, status, objective)."""
+    model = cp_model.CpModel()
+    x = [model.NewBoolVar(f"x{i}") for i in range(len(candidates))]
 
     # At most one shift per employee per day.
     groups: dict[tuple[str, int], list[int]] = {}
-    for i, c in enumerate(m.candidates):
+    for i, c in enumerate(candidates):
         groups.setdefault((c.emp_id, c.day), []).append(i)
     for idxs in groups.values():
         model.Add(sum(x[i] for i in idxs) <= 1)
 
-    # Pre-index candidates & fixed shifts by (day, slot).
+    ub = max(1, len({c.emp_id for c in candidates}) + len({f.emp_id for f in fixed}))
+
+    # Pre-index by (day, slot). Active staff uses `slots` (excludes breaks);
+    # manager *presence* uses `span` so a manager on their lunch still counts.
     cand_by_slot: dict[tuple[int, int], list[int]] = {}
-    mgr_cand_by_slot: dict[tuple[int, int], list[int]] = {}
+    mgr_span_by_slot: dict[tuple[int, int], list[int]] = {}
     base_staff: dict[tuple[int, int], int] = {}
-    base_mgr: dict[tuple[int, int], int] = {}
-    for i, c in enumerate(m.candidates):
+    base_mgr_span: dict[tuple[int, int], int] = {}
+    for i, c in enumerate(candidates):
         for s in c.slots:
             cand_by_slot.setdefault((c.day, s), []).append(i)
-            if c.is_manager:
-                mgr_cand_by_slot.setdefault((c.day, s), []).append(i)
-    for f in m.fixed:
+        if c.is_manager:
+            for s in c.span:
+                mgr_span_by_slot.setdefault((c.day, s), []).append(i)
+    for f in fixed:
         for s in f.slots:
             base_staff[(f.day, s)] = base_staff.get((f.day, s), 0) + 1
-            if f.is_manager:
-                base_mgr[(f.day, s)] = base_mgr.get((f.day, s), 0) + 1
+        if f.is_manager:
+            for s in f.span:
+                base_mgr_span[(f.day, s)] = base_mgr_span.get((f.day, s), 0) + 1
 
-    obj: list = []  # list of cp_model linear terms
-
-    # Per-candidate coefficients (priority, stability).
-    for i, c in enumerate(m.candidates):
+    obj: list = []
+    for i, c in enumerate(candidates):
         if c.coeff != 0:
             obj.append(c.coeff * x[i])
 
@@ -245,38 +299,41 @@ def solve(req: SolveRequest) -> SolveResponse:
     def is_late(day: int, slot_min: int) -> bool:
         return slot_min >= cfg.lateNightCutoffMin[day]
 
-    # Coverage-driven constraints & penalties per (day, slot).
     for day in range(cfg.daysPerWeek):
         for s in range(cfg.slotsPerDay):
             slot_min = cfg.storeOpenMin + s * cfg.slotMinutes
             cand_idxs = cand_by_slot.get((day, s), [])
-            mgr_idxs = mgr_cand_by_slot.get((day, s), [])
             bstaff = base_staff.get((day, s), 0)
-            bmgr = base_mgr.get((day, s), 0)
-
-            staff = model.NewIntVar(0, num_emp, f"staff_{day}_{s}")
+            staff = model.NewIntVar(0, ub, f"staff_{day}_{s}")
             model.Add(staff == sum(x[i] for i in cand_idxs) + bstaff)
-            mgr = model.NewIntVar(0, num_emp, f"mgr_{day}_{s}")
-            model.Add(mgr == sum(x[i] for i in mgr_idxs) + bmgr)
 
             # HARD: late-night cap (spec §3.3).
             if is_late(day, slot_min):
                 model.Add(staff <= cfg.lateNightMaxStaff)
 
-            # SOFT: manager presence (spec §2) — every open slot wants >=1 manager.
-            mgr_short = model.NewIntVar(0, cfg.managerMinOnSite, f"mshort_{day}_{s}")
-            model.Add(mgr_short >= cfg.managerMinOnSite - mgr)
-            obj.append(W_MANAGER * mgr_short)
+            if manager_phase:
+                # Manager presence: keep >=1 manager on at all open hours. The
+                # even spread comes from having to cover the whole day; managers
+                # are free to work full-length, overlapping shifts so they meet
+                # their hour requirements. Uses span (a manager on their lunch
+                # break still counts as present).
+                mgr_idxs = mgr_span_by_slot.get((day, s), [])
+                bmgr = base_mgr_span.get((day, s), 0)
+                mgr = model.NewIntVar(0, ub, f"mgr_{day}_{s}")
+                model.Add(mgr == sum(x[i] for i in mgr_idxs) + bmgr)
+                mgr_short = model.NewIntVar(0, cfg.managerMinOnSite, f"mshort_{day}_{s}")
+                model.Add(mgr_short >= cfg.managerMinOnSite - mgr)
+                obj.append(W_MANAGER * mgr_short)
+                continue
 
+            # Crew phase coverage (managers already fixed): baseline & rush.
             if is_late(day, slot_min):
                 continue  # late-night: only the cap applies (closing crew)
-
             if in_rush(slot_min):
                 rush_short = model.NewIntVar(0, cfg.rushTargetStaff, f"rshort_{day}_{s}")
                 model.Add(rush_short >= cfg.rushTargetStaff - staff)
                 obj.append(W_RUSH * rush_short)
             else:
-                # Baseline: hard floor (3) + preferred target (4).
                 floor_short = model.NewIntVar(0, cfg.baselineFloorStaff, f"fshort_{day}_{s}")
                 model.Add(floor_short >= cfg.baselineFloorStaff - staff)
                 obj.append(W_BASE_FLOOR * floor_short)
@@ -284,33 +341,35 @@ def solve(req: SolveRequest) -> SolveResponse:
                 model.Add(tgt_short >= cfg.baselineTargetStaff - staff)
                 obj.append(W_BASE_TARGET * tgt_short)
 
-    # Daily labour (spec §2) + weekly hour bounds (spec §5).
-    paid_by_day: dict[int, list] = {d: [] for d in range(cfg.daysPerWeek)}
-    paid_by_day_base: dict[int, int] = {d: 0 for d in range(cfg.daysPerWeek)}
+    big = ub * cfg.gmShiftMaxMin
+
+    # Daily labour only matters once crew are placed (managers alone are light).
+    if not manager_phase:
+        paid_by_day: dict[int, list] = {d: [] for d in range(cfg.daysPerWeek)}
+        paid_by_day_base: dict[int, int] = {d: 0 for d in range(cfg.daysPerWeek)}
+        for i, c in enumerate(candidates):
+            paid_by_day[c.day].append(c.paid * x[i])
+        for f in fixed:
+            paid_by_day_base[f.day] += f.paid
+        for day in range(cfg.daysPerWeek):
+            daypaid = model.NewIntVar(0, big, f"daypaid_{day}")
+            model.Add(daypaid == sum(paid_by_day[day]) + paid_by_day_base[day])
+            model.Add(daypaid <= cfg.dailyLaborHardCapMin)  # HARD: daily hard cap
+            lshort = model.NewIntVar(0, cfg.dailyLaborMinMin, f"lshort_{day}")
+            model.Add(lshort >= cfg.dailyLaborMinMin - daypaid)
+            obj.append(W_LABOR_MIN * lshort)
+            lover = model.NewIntVar(0, big, f"lover_{day}")
+            model.Add(lover >= daypaid - cfg.dailyLaborSoftCapMin)
+            obj.append(W_LABOR_OVER * lover)
+
+    # Weekly hour bounds for this phase's employees.
     paid_by_emp: dict[str, list] = {}
     paid_by_emp_base: dict[str, int] = {}
-    for i, c in enumerate(m.candidates):
-        paid_by_day[c.day].append(c.paid * x[i])
+    for i, c in enumerate(candidates):
         paid_by_emp.setdefault(c.emp_id, []).append(c.paid * x[i])
-    for f in m.fixed:
-        paid_by_day_base[f.day] += f.paid
+    for f in fixed:
         paid_by_emp_base[f.emp_id] = paid_by_emp_base.get(f.emp_id, 0) + f.paid
-
-    big = num_emp * cfg.gmShiftMaxMin
-    for day in range(cfg.daysPerWeek):
-        daypaid = model.NewIntVar(0, big, f"daypaid_{day}")
-        model.Add(daypaid == sum(paid_by_day[day]) + paid_by_day_base[day])
-        # HARD: daily labour hard cap (spec §2).
-        model.Add(daypaid <= cfg.dailyLaborHardCapMin)
-        # SOFT: below daily minimum / over soft cap.
-        lshort = model.NewIntVar(0, cfg.dailyLaborMinMin, f"lshort_{day}")
-        model.Add(lshort >= cfg.dailyLaborMinMin - daypaid)
-        obj.append(W_LABOR_MIN * lshort)
-        lover = model.NewIntVar(0, big, f"lover_{day}")
-        model.Add(lover >= daypaid - cfg.dailyLaborSoftCapMin)
-        obj.append(W_LABOR_OVER * lover)
-
-    for emp in req.employees:
+    for emp in decision_employees:
         terms = paid_by_emp.get(emp.id, [])
         base = paid_by_emp_base.get(emp.id, 0)
         weekpaid = model.NewIntVar(0, big * cfg.daysPerWeek, f"week_{emp.id}")
@@ -320,87 +379,135 @@ def solve(req: SolveRequest) -> SolveResponse:
         if emp.minHoursPerWeek is not None:
             mshort = model.NewIntVar(0, emp.minHoursPerWeek * 60, f"weekshort_{emp.id}")
             model.Add(mshort >= emp.minHoursPerWeek * 60 - weekpaid)
-            obj.append(W_MINHOURS * mshort)
+            obj.append((W_MINHOURS_MGR if manager_phase else W_MINHOURS) * mshort)
 
-    # HARD: minimum days off per week. Every employee works at most
-    # (daysPerWeek - minDaysOffPerWeek) days, e.g. <= 5 working days => 2 off.
-    # Each (emp, day) group already sums to <= 1, so the sum of an employee's
-    # candidate vars counts their chosen working days; hard-set days are added.
+    # HARD: minimum days off per week (per this phase's employees).
     max_working_days = cfg.daysPerWeek - cfg.minDaysOffPerWeek
     emp_cand_idxs: dict[str, list[int]] = {}
-    for i, c in enumerate(m.candidates):
+    for i, c in enumerate(candidates):
         emp_cand_idxs.setdefault(c.emp_id, []).append(i)
     emp_fixed_days: dict[str, set[int]] = {}
-    for f in m.fixed:
+    for f in fixed:
         emp_fixed_days.setdefault(f.emp_id, set()).add(f.day)
-    for emp in req.employees:
+    for emp in decision_employees:
         idxs = emp_cand_idxs.get(emp.id, [])
         fixed_days = len(emp_fixed_days.get(emp.id, set()))
         rhs = max_working_days - fixed_days
         if idxs and rhs >= 0:
             model.Add(sum(x[i] for i in idxs) <= rhs)
-        # If rhs < 0 the hard-set shifts alone already exceed the cap; those are
-        # locked, so nothing to constrain here (surfaced in the gap report).
 
     # RESOLVE stability: discourage churn & dropped days (spec §6, F-2).
-    if req.mode == "RESOLVE" and req.existingAssignments:
-        existing_days = {(a.employeeId, a.dayOfWeek) for a in req.existingAssignments}
+    if mode == "RESOLVE" and existing:
+        existing_days = {(a.employeeId, a.dayOfWeek) for a in existing}
         for (emp_id, day), idxs in groups.items():
-            had = (emp_id, day) in existing_days
             worked = sum(x[i] for i in idxs)
-            if had:
-                # Penalty when a previously-worked day is dropped.
+            if (emp_id, day) in existing_days:
                 dropped = model.NewBoolVar(f"drop_{emp_id}_{day}")
                 model.Add(worked == 0).OnlyEnforceIf(dropped)
                 model.Add(worked >= 1).OnlyEnforceIf(dropped.Not())
                 obj.append(W_DROP * dropped)
             else:
-                obj.append(W_CHURN * worked)  # adding a new working day costs a little
+                obj.append(W_CHURN * worked)
 
     model.Minimize(sum(obj))
 
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = float(req.timeLimitSeconds)
+    solver.parameters.max_time_in_seconds = max(0.1, float(time_limit))
     solver.parameters.num_search_workers = 8
     status = solver.Solve(model)
-    status_name = solver.StatusName(status)
 
-    assignments: list[Assignment] = []
+    chosen: list[Assignment] = []
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        for i, c in enumerate(m.candidates):
+        for i, c in enumerate(candidates):
             if solver.Value(x[i]) == 1:
-                assignments.append(
+                chosen.append(
                     Assignment(
                         employeeId=c.emp_id,
                         dayOfWeek=c.day,
                         startMin=c.start,
                         endMin=c.end,
-                        breakStartMin=c.break_start,
+                        breakStarts=c.break_starts,
                         paidMinutes=c.paid,
                         locked=False,
                         source="SOLVER",
                     )
                 )
-    # Fixed (hard-set) shifts are always part of the schedule.
-    for f in m.fixed:
+    obj_val = solver.ObjectiveValue() if status in (cp_model.OPTIMAL, cp_model.FEASIBLE) else None
+    return chosen, solver.StatusName(status), obj_val
+
+
+def solve(req: SolveRequest) -> SolveResponse:
+    """Two-phase solve (spec §5.1): place managers / GM first with an even
+    spread (no two opening or closing together), then schedule the rest of the
+    crew around the now-fixed manager coverage."""
+    t0 = time.time()
+    cfg = req.config
+    m = build_fixed_and_candidates(req)
+    apply_objective_coeffs(m, req)
+
+    mgr_ids = {e.id for e in req.employees if e.isManager}
+    managers = [e for e in req.employees if e.isManager]
+    crew = [e for e in req.employees if not e.isManager]
+    mgr_candidates = [c for c in m.candidates if c.emp_id in mgr_ids]
+    crew_candidates = [c for c in m.candidates if c.emp_id not in mgr_ids]
+    mgr_fixed = [f for f in m.fixed if f.emp_id in mgr_ids]
+    crew_fixed = [f for f in m.fixed if f.emp_id not in mgr_ids]
+
+    total_limit = float(req.timeLimitSeconds)
+    statuses: list[str] = []
+    obj_total = 0.0
+
+    # --- Phase 1: managers / GM first (even spread) -----------------------
+    mgr_chosen: list[Assignment] = []
+    p1_limit = 0.0
+    if mgr_candidates or mgr_fixed:
+        p1_limit = min(total_limit * 0.35, 8.0) if crew_candidates else total_limit
+        mgr_chosen, st1, ov1 = _solve_phase(
+            cfg, managers, mgr_candidates, mgr_fixed, req.mode, req.existingAssignments, p1_limit, manager_phase=True
+        )
+        statuses.append(st1)
+        if ov1 is not None:
+            obj_total += ov1
+
+    # Managers (hard-set + phase-1 picks) become fixed coverage for the crew.
+    mgr_all_fixed = list(mgr_fixed) + [_assignment_to_fixed(a, cfg, is_manager=True) for a in mgr_chosen]
+
+    # --- Phase 2: crew around the fixed managers --------------------------
+    p2_limit = max(1.0, total_limit - p1_limit)
+    crew_chosen, st2, ov2 = _solve_phase(
+        cfg, crew, crew_candidates, crew_fixed + mgr_all_fixed, req.mode, req.existingAssignments, p2_limit, manager_phase=False
+    )
+    statuses.append(st2)
+    if ov2 is not None:
+        obj_total += ov2
+
+    # --- Assemble final schedule ------------------------------------------
+    assignments: list[Assignment] = list(mgr_chosen) + list(crew_chosen)
+    for f in m.fixed:  # hard-set shifts are always part of the schedule
         assignments.append(
             Assignment(
                 employeeId=f.emp_id,
                 dayOfWeek=f.day,
                 startMin=f.start,
                 endMin=f.end,
-                breakStartMin=f.break_start,
+                breakStarts=f.break_starts,
                 paidMinutes=f.paid,
                 locked=True,
                 source="HARDSET",
             )
         )
 
+    if any(s == "INFEASIBLE" for s in statuses):
+        status_name = "INFEASIBLE"
+    elif statuses and all(s == "OPTIMAL" for s in statuses):
+        status_name = "OPTIMAL"
+    else:
+        status_name = "FEASIBLE"
+
     gaps = compute_gaps(req.employees, assignments, cfg)
-    obj_val = solver.ObjectiveValue() if status in (cp_model.OPTIMAL, cp_model.FEASIBLE) else None
     return SolveResponse(
         status=status_name,
-        objectiveValue=obj_val,
+        objectiveValue=obj_total if statuses else None,
         solveMs=int((time.time() - t0) * 1000),
         assignments=assignments,
         gaps=gaps,
@@ -421,10 +528,16 @@ def _fmt(minute: int) -> str:
     return f"{h12} {period}" if mm == 0 else f"{h12}:{mm:02d} {period}"
 
 
+def _spans(a: Assignment, slot_min: int, cfg: StoreConfig) -> bool:
+    """Shift spans the slot, ignoring breaks (person on premises)."""
+    return a.startMin <= slot_min and a.endMin >= slot_min + cfg.slotMinutes
+
+
 def _covers(a: Assignment, slot_min: int, cfg: StoreConfig) -> bool:
-    if a.startMin > slot_min or a.endMin < slot_min + cfg.slotMinutes:
+    """Actively staffs the slot — spans it and is not on an unpaid break."""
+    if not _spans(a, slot_min, cfg):
         return False
-    if a.breakStartMin is not None and a.breakStartMin <= slot_min < a.breakStartMin + cfg.lunchBreakMin:
+    if any(b <= slot_min < b + cfg.lunchBreakMin for b in a.breakStarts):
         return False
     return True
 
@@ -471,10 +584,12 @@ def compute_gaps(employees: list[Employee], assignments: list[Assignment], cfg: 
         for s in range(cfg.slotsPerDay):
             slot_min = cfg.storeOpenMin + s * cfg.slotMinutes
             for a in day_shifts:
+                is_mgr = emp_by_id.get(a.employeeId) and emp_by_id[a.employeeId].isManager
                 if _covers(a, slot_min, cfg):
                     staff[s] += 1
-                    if emp_by_id.get(a.employeeId) and emp_by_id[a.employeeId].isManager:
-                        mgr[s] += 1
+                # Manager on a lunch break still counts as present (uses span).
+                if is_mgr and _spans(a, slot_min, cfg):
+                    mgr[s] += 1
 
         mgr_flags = [
             ("BLOCKING", mgr[s], cfg.managerMinOnSite) if (staff[s] > 0 and mgr[s] < cfg.managerMinOnSite) else None

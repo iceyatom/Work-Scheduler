@@ -124,11 +124,12 @@ model Assignment {
   employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   employeeId String
 
-  dayOfWeek     Int
-  startMin      Int
-  endMin        Int
-  breakStartMin Int? // start of the 30-min unpaid lunch, null if shift <= 5h
-  paidMinutes   Int  // (endMin - startMin) minus the unpaid break
+  dayOfWeek   Int
+  startMin    Int
+  endMin      Int
+  // Start minutes of each unpaid 30-min lunch (one per 5h worked; empty if <=5h).
+  breakStarts Int[] @default([])
+  paidMinutes Int   // (endMin - startMin) minus the unpaid breaks
 
   locked Boolean          @default(false) // pinned (hard-set or manager-locked)
   source AssignmentSource @default(SOLVER)

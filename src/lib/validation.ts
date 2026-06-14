@@ -55,25 +55,39 @@ export interface ShiftLite {
   dayOfWeek: number;
   startMin: number;
   endMin: number;
-  breakStartMin: number | null;
+  breakStarts: number[];
   paidMinutes: number;
 }
 
 // --- Shift derivation ------------------------------------------------------
 
-/** Derive the unpaid-lunch break & paid minutes for a shift (spec §4). */
+/** Number of unpaid 30-min lunches: one per 5h worked (spec §4 + CA meal-break
+ *  rule). 0–5h: none; >5h: 1; 10h+: 2 (one per 5-hour interval). */
+export function numBreaks(durationMin: number): number {
+  if (durationMin <= LUNCH_BREAK_THRESHOLD_MIN) return 0;
+  return Math.floor(durationMin / LUNCH_BREAK_THRESHOLD_MIN);
+}
+
+/** Derive the unpaid-lunch breaks & paid minutes for a shift (spec §4).
+ *  Breaks split the shift into roughly equal work segments. */
 export function deriveShift(startMin: number, endMin: number): {
-  breakStartMin: number | null;
+  breakStarts: number[];
   paidMinutes: number;
 } {
   const duration = endMin - startMin;
-  if (duration > LUNCH_BREAK_THRESHOLD_MIN) {
-    // Centre the 30-min break, snapped to the slot grid.
-    let breakStart = snapToSlot(startMin + Math.floor(duration / 2) - LUNCH_BREAK_MIN / 2);
-    breakStart = Math.max(startMin + SLOT_MINUTES, Math.min(breakStart, endMin - SLOT_MINUTES - LUNCH_BREAK_MIN));
-    return { breakStartMin: breakStart, paidMinutes: duration - LUNCH_BREAK_MIN };
+  const n = numBreaks(duration);
+  const breakStarts: number[] = [];
+  if (n > 0) {
+    const seg = Math.floor(duration / (n + 1));
+    for (let i = 1; i <= n; i++) {
+      let b = snapToSlot(startMin + i * seg - LUNCH_BREAK_MIN / 2);
+      const lo = breakStarts.length ? breakStarts[breakStarts.length - 1] + LUNCH_BREAK_MIN + SLOT_MINUTES : startMin + SLOT_MINUTES;
+      const hi = endMin - SLOT_MINUTES - LUNCH_BREAK_MIN;
+      b = Math.max(lo, Math.min(b, hi));
+      breakStarts.push(b);
+    }
   }
-  return { breakStartMin: null, paidMinutes: duration };
+  return { breakStarts, paidMinutes: duration - n * LUNCH_BREAK_MIN };
 }
 
 // General per-shift max. The minor 4h cap is a *school-night* rule, enforced
@@ -153,36 +167,40 @@ export function validateShift(emp: EmployeeLite, dayOfWeek: number, startMin: nu
 
 // --- Coverage --------------------------------------------------------------
 
+/** Shift spans the slot, ignoring breaks (i.e. the person is on premises). */
+function shiftSpansSlot(shift: ShiftLite, slotStartMin: number): boolean {
+  return shift.startMin <= slotStartMin && shift.endMin >= slotStartMin + SLOT_MINUTES;
+}
+
+/** Shift actively staffs the slot — spans it AND is not on an unpaid break. */
 function shiftCoversSlot(shift: ShiftLite, slotStartMin: number): boolean {
-  const slotEnd = slotStartMin + SLOT_MINUTES;
-  if (shift.startMin > slotStartMin || shift.endMin < slotEnd) return false;
-  if (shift.breakStartMin != null) {
-    const bEnd = shift.breakStartMin + LUNCH_BREAK_MIN;
-    // On unpaid break -> not counted as staffed.
-    if (slotStartMin >= shift.breakStartMin && slotStartMin < bEnd) return false;
+  if (!shiftSpansSlot(shift, slotStartMin)) return false;
+  for (const b of shift.breakStarts) {
+    if (slotStartMin >= b && slotStartMin < b + LUNCH_BREAK_MIN) return false; // on break
   }
   return true;
 }
 
 export interface DayCoverage {
-  staff: number[]; // length SLOTS_PER_DAY
-  managers: number[];
+  staff: number[]; // active staff (excludes anyone on break), length SLOTS_PER_DAY
+  /** Managers present on premises, counting those on their lunch break — a
+   *  manager on a 30-min break still satisfies the manager-presence rule. */
+  managerPresent: number[];
 }
 
 export function coverageForDay(shifts: ShiftLite[], empById: Map<string, EmployeeLite>, dayOfWeek: number): DayCoverage {
   const staff = new Array(SLOTS_PER_DAY).fill(0);
-  const managers = new Array(SLOTS_PER_DAY).fill(0);
+  const managerPresent = new Array(SLOTS_PER_DAY).fill(0);
   const dayShifts = shifts.filter((s) => s.dayOfWeek === dayOfWeek);
   for (let i = 0; i < SLOTS_PER_DAY; i++) {
     const slotStart = STORE_OPEN_MIN + i * SLOT_MINUTES;
     for (const sh of dayShifts) {
-      if (shiftCoversSlot(sh, slotStart)) {
-        staff[i]++;
-        if (empById.get(sh.employeeId)?.isManager) managers[i]++;
-      }
+      const isMgr = empById.get(sh.employeeId)?.isManager;
+      if (shiftCoversSlot(sh, slotStart)) staff[i]++;
+      if (isMgr && shiftSpansSlot(sh, slotStart)) managerPresent[i]++;
     }
   }
-  return { staff, managers };
+  return { staff, managerPresent };
 }
 
 function inRush(slotStartMin: number): boolean {
@@ -234,11 +252,12 @@ export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[])
   const gaps: GapItem[] = [];
 
   for (let day = 0; day < 7; day++) {
-    const { staff, managers } = coverageForDay(shifts, empById, day);
+    const { staff, managerPresent } = coverageForDay(shifts, empById, day);
 
     // Manager presence (spec §2) – blocking whenever the store is "open" and
-    // staffed but no manager is present.
-    const mgrFlags: (null | { severity: GapSeverity; have: number; need: number })[] = managers.map((m, i) => {
+    // staffed but no manager is present. A manager on their lunch break still
+    // counts as present (managerPresent includes break slots).
+    const mgrFlags: (null | { severity: GapSeverity; have: number; need: number })[] = managerPresent.map((m, i) => {
       const anyOpenCoverage = staff[i] > 0;
       return m < MANAGER_MIN_ON_SITE && anyOpenCoverage
         ? ({ severity: "BLOCKING" as const, have: m, need: MANAGER_MIN_ON_SITE })

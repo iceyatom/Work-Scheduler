@@ -56,7 +56,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
         date.toISOString().slice(0, 10),
         clock24(a.startMin),
         clock24(a.endMin),
-        a.breakStartMin != null ? 30 : 0,
+        a.breakStarts.length * 30,
         (a.paidMinutes / 60).toFixed(2),
         emp?.isManager ? "Y" : "N",
         a.source,

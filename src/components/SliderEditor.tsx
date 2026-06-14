@@ -31,7 +31,7 @@ export function SliderEditor({
 
   const violations = useMemo(() => validateShift(employee, dayOfWeek, start, end), [employee, dayOfWeek, start, end]);
   const blocking = violations.filter((v) => v.severity === "BLOCKING");
-  const derived = end > start ? deriveShift(start, end) : { breakStartMin: null, paidMinutes: 0 };
+  const derived = end > start ? deriveShift(start, end) : { breakStarts: [] as number[], paidMinutes: 0 };
 
   function clampStart(v: number) {
     setStart(Math.min(v, end - SLOT_MINUTES));
@@ -104,7 +104,11 @@ export function SliderEditor({
           <span>
             Paid <strong className="text-slate-900">{hoursFromMin(derived.paidMinutes)}h</strong>
           </span>
-          <span>Break {derived.breakStartMin != null ? `${formatMinutes(derived.breakStartMin)} (30m)` : "none"}</span>
+          <span>
+            {derived.breakStarts.length === 0
+              ? "Breaks none"
+              : `Break${derived.breakStarts.length > 1 ? "s" : ""} ${derived.breakStarts.map((b) => formatMinutes(b)).join(", ")} (30m each)`}
+          </span>
         </div>
 
         {violations.length > 0 && (

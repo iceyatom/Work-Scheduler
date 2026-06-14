@@ -106,22 +106,34 @@ docker compose down         # stop the stack (data persists in a volume)
 
 ## How the solver works
 
-A **shift-selection** CP-SAT model (`solver/engine.py`):
+A **shift-selection** CP-SAT model (`solver/engine.py`) solved in **two phases**
+so managers are placed first:
 
 1. For every `(employee, day)` it enumerates **candidate shifts** that already
    respect the structural rules — availability windows, 4–8.5h length (10.5h GM,
    ≤4h minors on school nights), and the minor not-past-10pm rule.
 2. A boolean variable selects **at most one** candidate per employee per day.
-3. **Hard constraints** (cannot be violated): per-day late-night cap (≤2 after
-   cutoff), 80h/day labor hard cap, weekly max-hours, **≥2 days off per week**
-   (≤5 working days per employee), and the structural rules baked into candidate
-   generation. Hard-set shifts (e.g. the GM) are fixed constants.
-4. **Soft constraints** (weighted penalties, always feasible): manager presence,
-   baseline floor (3) / target (4), rush target (5), 70h/day minimum, 75h/day soft
-   cap, weekly minimums, and priority weighting (FT over PT, and performance). In
-   **RESOLVE** mode an extra stability term keeps existing shifts unchanged.
-5. The result is mapped back to assignments, and a **gap report** is computed and
-   returned.
+3. **Phase 1 — managers / GM first.** Only managers are scheduled to keep ≥1
+   manager on at all open hours. The even spread falls out of having to cover the
+   whole day (5 AM–12:30 AM) with a few managers; they're free to work full-length
+   shifts so they meet their weekly hour minimums (a stronger manager min-hours
+   weight drives this). Their resulting shifts are then locked.
+4. **Phase 2 — crew around the managers.** The phase-1 manager shifts become
+   fixed coverage, and the rest of the crew is scheduled to meet baseline/rush
+   coverage and labor targets on top of them.
+5. **Hard constraints** (both phases): per-day late-night cap (≤2 after cutoff),
+   80h/day labor hard cap, weekly max-hours, **≥2 days off per week** (≤5 working
+   days per employee), and the structural rules baked into candidate generation.
+   Hard-set shifts (e.g. a GM standing shift) are fixed constants.
+6. **Soft constraints** (weighted penalties, always feasible): manager presence
+   (phase 1); baseline floor (3) / target (4), rush target (5), 70h/day minimum,
+   75h/day soft cap (phase 2); weekly minimums (stronger for managers) and
+   priority weighting (FT over PT, and performance) in both. In **RESOLVE** mode
+   an extra stability term keeps existing shifts unchanged.
+7. The combined result is mapped to assignments, and a **gap report** is computed.
+
+The CP-SAT time budget is split between the two phases (managers get the smaller
+share since it's a small problem; the crew phase gets the rest).
 
 Per the spec's *"soft constraints over hard failures"* philosophy, coverage and
 manager rules are modelled as penalties so the solver **always returns its best
@@ -149,13 +161,13 @@ to the solver on every request). Mirrored as defaults in `solver/models.py`.
 | Parameter | Value |
 |-----------|-------|
 | Store hours | 5:00 AM – 12:30 AM (78 × 15-min slots) |
-| Manager presence | ≥1 manager whenever open (soft, reported) |
+| Manager presence | ≥1 manager whenever open (a manager on their lunch still counts as present) |
 | Rush target | 5 staff, 11:00–13:00 & 18:00–20:00 (soft) |
 | Baseline | floor 3 (blocking) / target 4 (soft) |
 | Late-night cap | ≤2 after per-day cutoff (hard): Mon 22:00, Tue 23:00, Wed 22:30, Thu 23:00, Fri–Sun 23:30 |
 | Daily labor | 70h min / 75h soft cap / 80h hard cap |
 | Shift length | 4–8.5h regular, ≤10.5h GM, ≤4h minor (school night) |
-| Unpaid lunch | 30 min auto-inserted for shifts > 5h |
+| Unpaid lunch | one 30-min break per 5h worked (>5h → 1, 10h+ → 2) |
 | Minor school nights | ≤4h and not past 10:00 PM (Sun–Thu nights) |
 | Days off | ≥2 per employee per week, i.e. ≤5 working days (hard) |
 

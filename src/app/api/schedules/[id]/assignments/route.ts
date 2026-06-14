@@ -13,12 +13,12 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     const body = assignmentUpsert.parse(await req.json());
     if (body.endMin <= body.startMin) return badRequest("End time must be after start time.");
 
-    const { breakStartMin, paidMinutes } = deriveShift(body.startMin, body.endMin);
+    const { breakStarts, paidMinutes } = deriveShift(body.startMin, body.endMin);
 
     if (body.id) {
       await prisma.assignment.update({
         where: { id: body.id },
-        data: { dayOfWeek: body.dayOfWeek, startMin: body.startMin, endMin: body.endMin, breakStartMin, paidMinutes, source: "MANUAL", locked: body.locked ?? undefined },
+        data: { dayOfWeek: body.dayOfWeek, startMin: body.startMin, endMin: body.endMin, breakStarts, paidMinutes, source: "MANUAL", locked: body.locked ?? undefined },
       });
     } else {
       await prisma.assignment.create({
@@ -28,7 +28,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
           dayOfWeek: body.dayOfWeek,
           startMin: body.startMin,
           endMin: body.endMin,
-          breakStartMin,
+          breakStarts,
           paidMinutes,
           source: "MANUAL",
           locked: body.locked ?? false,
