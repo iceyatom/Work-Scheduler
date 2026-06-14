@@ -40,7 +40,7 @@ export function PrintableReport({ detail }: { detail: ScheduleDetail }) {
             <tr key={emp.id}>
               <td className="border border-slate-300 px-2 py-1.5 font-medium">
                 {emp.name}
-                {emp.isManager ? " (M)" : ""}
+                {emp.isGM ? " (GM)" : emp.isManager ? " (M)" : ""}
               </td>
               {DAY_NAMES.map((_, day) => {
                 const cell = index.get(`${emp.id}:${day}`) ?? [];
@@ -77,7 +77,7 @@ export function PrintableReport({ detail }: { detail: ScheduleDetail }) {
           </tr>
         </tfoot>
       </table>
-      <p className="mt-2 text-[10px] text-slate-400">(M) = manager · times shown are scheduled start–end · hours are paid hours (unpaid 30-min lunch removed for shifts over 5h).</p>
+      <p className="mt-2 text-[10px] text-slate-400">(GM) = general manager · (M) = manager · times shown are scheduled start–end · hours are paid hours (unpaid 30-min lunch removed for shifts over 5h).</p>
     </div>
   );
 }

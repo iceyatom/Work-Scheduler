@@ -4,7 +4,7 @@ Approach: shift-selection. For every (employee, day) we enumerate a set of
 candidate shifts that already respect the structural rules (availability, shift
 length, GM exception, minor school-night limits). A boolean decision variable
 picks at most one candidate per employee per day. Coverage, manager presence,
-labour and preferences are then expressed over those variables.
+labour and priority weighting are then expressed over those variables.
 
 Design philosophy (spec §1): soft constraints over hard failures. Only true
 upper-bound caps are modelled as hard constraints (late-night max, daily labour
@@ -30,9 +30,6 @@ W_RUSH = 40           # per staff below the rush target (5), per rush slot
 W_LABOR_MIN = 2       # per minute below the daily 70h minimum
 W_LABOR_OVER = 3      # per minute over the daily 75h soft cap
 W_MINHOURS = 1        # per minute an employee is below their weekly minimum
-W_PREF_DAYOFF = 30    # per (weighted) preferred-day-off that is worked
-W_PREF_TIME = 3       # reward per slot worked inside a preferred window
-W_PREF_AVOID = 5      # penalty per slot worked inside an avoided window
 W_PRIORITY = 1        # reward per priority-point * hour assigned
 # RESOLVE-mode stability weights
 W_STABILITY = 2000    # reward for keeping an identical existing shift
@@ -93,11 +90,10 @@ def covered_slots(start: int, end: int, break_start: int | None, cfg: StoreConfi
 
 
 def priority_score(emp: Employee) -> int:
-    """Higher = hours should flow here first (spec §5.1)."""
+    """Higher = hours should flow here first (spec §5.1). Weighted by employment
+    type (FT over PT) and performance."""
     score = 3 if emp.employmentType == "FULL_TIME" else 1
     score += emp.performance
-    score += emp.certifications
-    score += emp.seniorityMonths // 12
     return score
 
 
@@ -191,26 +187,12 @@ def build_fixed_and_candidates(req: SolveRequest) -> Model:
 
 
 def apply_objective_coeffs(m: Model, req: SolveRequest) -> None:
-    cfg = m.cfg
-    # Priority + preference coefficients folded into each candidate.
+    # Priority coefficient folded into each candidate.
     existing = {(a.employeeId, a.dayOfWeek): a for a in (req.existingAssignments or [])} if req.mode == "RESOLVE" else {}
     for c in m.candidates:
         emp = m.employees[c.emp_id]
         # Priority reward (negative = good): score * hours.
         c.coeff -= W_PRIORITY * priority_score(emp) * (c.paid // 60)
-        for p in emp.preferences:
-            if p.kind == "PREFER_DAY_OFF" and (p.dayOfWeek is None or p.dayOfWeek == c.day):
-                c.coeff += W_PREF_DAYOFF * p.weight
-            elif p.kind in ("PREFER_TIME", "AVOID_TIME"):
-                if p.dayOfWeek is not None and p.dayOfWeek != c.day:
-                    continue
-                lo = p.startMin if p.startMin is not None else cfg.storeOpenMin
-                hi = p.endMin if p.endMin is not None else cfg.storeCloseMin
-                n_in = sum(1 for s in c.slots if lo <= cfg.storeOpenMin + s * cfg.slotMinutes < hi)
-                if p.kind == "PREFER_TIME":
-                    c.coeff -= W_PREF_TIME * p.weight * n_in
-                else:
-                    c.coeff += W_PREF_AVOID * p.weight * n_in
         # RESOLVE stability: reward keeping an identical shift.
         ex = existing.get((c.emp_id, c.day))
         if ex is not None and ex.startMin == c.start and ex.endMin == c.end:
@@ -252,7 +234,7 @@ def solve(req: SolveRequest) -> SolveResponse:
 
     obj: list = []  # list of cp_model linear terms
 
-    # Per-candidate coefficients (priority, preferences, stability).
+    # Per-candidate coefficients (priority, stability).
     for i, c in enumerate(m.candidates):
         if c.coeff != 0:
             obj.append(c.coeff * x[i])
@@ -339,6 +321,26 @@ def solve(req: SolveRequest) -> SolveResponse:
             mshort = model.NewIntVar(0, emp.minHoursPerWeek * 60, f"weekshort_{emp.id}")
             model.Add(mshort >= emp.minHoursPerWeek * 60 - weekpaid)
             obj.append(W_MINHOURS * mshort)
+
+    # HARD: minimum days off per week. Every employee works at most
+    # (daysPerWeek - minDaysOffPerWeek) days, e.g. <= 5 working days => 2 off.
+    # Each (emp, day) group already sums to <= 1, so the sum of an employee's
+    # candidate vars counts their chosen working days; hard-set days are added.
+    max_working_days = cfg.daysPerWeek - cfg.minDaysOffPerWeek
+    emp_cand_idxs: dict[str, list[int]] = {}
+    for i, c in enumerate(m.candidates):
+        emp_cand_idxs.setdefault(c.emp_id, []).append(i)
+    emp_fixed_days: dict[str, set[int]] = {}
+    for f in m.fixed:
+        emp_fixed_days.setdefault(f.emp_id, set()).add(f.day)
+    for emp in req.employees:
+        idxs = emp_cand_idxs.get(emp.id, [])
+        fixed_days = len(emp_fixed_days.get(emp.id, set()))
+        rhs = max_working_days - fixed_days
+        if idxs and rhs >= 0:
+            model.Add(sum(x[i] for i in idxs) <= rhs)
+        # If rhs < 0 the hard-set shifts alone already exceed the cap; those are
+        # locked, so nothing to constrain here (surfaced in the gap report).
 
     # RESOLVE stability: discourage churn & dropped days (spec §6, F-2).
     if req.mode == "RESOLVE" and req.existingAssignments:
@@ -533,6 +535,27 @@ def compute_gaps(employees: list[Employee], assignments: list[Assignment], cfg: 
         for kind, sev, msg in _shift_violations(emp, a, cfg):
             gaps.append(
                 GapItem(kind=kind, severity=sev, dayOfWeek=a.dayOfWeek, startMin=a.startMin, endMin=a.endMin, message=f"{emp.name}: {msg}", detail={"employeeId": emp.id})
+            )
+
+    # Minimum days off per week: each employee works at most maxWorkingDays.
+    max_working_days = cfg.daysPerWeek - cfg.minDaysOffPerWeek
+    days_worked: dict[str, set[int]] = {}
+    for a in assignments:
+        days_worked.setdefault(a.employeeId, set()).add(a.dayOfWeek)
+    for emp_id, days in days_worked.items():
+        if len(days) > max_working_days:
+            emp = emp_by_id.get(emp_id)
+            name = emp.name if emp else emp_id
+            gaps.append(
+                GapItem(
+                    kind="DAYS_OFF",
+                    severity="BLOCKING",
+                    dayOfWeek=None,
+                    startMin=None,
+                    endMin=None,
+                    message=f"{name}: scheduled {len(days)} days — needs at least {cfg.minDaysOffPerWeek} days off (max {max_working_days} working days).",
+                    detail={"employeeId": emp_id, "daysWorked": len(days), "max": max_working_days},
+                )
             )
     return gaps
 

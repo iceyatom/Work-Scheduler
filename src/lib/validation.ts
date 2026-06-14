@@ -18,12 +18,14 @@ import {
   DAILY_LABOR_MIN_MIN,
   DAILY_LABOR_SOFT_CAP_MIN,
   DAY_NAMES,
+  DAYS_PER_WEEK,
   GM_SHIFT_MAX_MIN,
   LATE_NIGHT_CUTOFF_MIN,
   LATE_NIGHT_MAX_STAFF,
   LUNCH_BREAK_MIN,
   LUNCH_BREAK_THRESHOLD_MIN,
   MANAGER_MIN_ON_SITE,
+  MIN_DAYS_OFF_PER_WEEK,
   MINOR_LATEST_END_MIN,
   MINOR_MAX_SHIFT_MIN,
   REGULAR_SHIFT_MAX_MIN,
@@ -302,6 +304,28 @@ export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[])
         endMin: sh.endMin,
         message: `${emp.name}: ${v.message}`,
         detail: { employeeId: emp.id },
+      });
+    }
+  }
+
+  // Minimum days off per week: each employee must work <= maxWorkingDays.
+  const maxWorkingDays = DAYS_PER_WEEK - MIN_DAYS_OFF_PER_WEEK;
+  const daysWorked = new Map<string, Set<number>>();
+  for (const sh of shifts) {
+    if (!daysWorked.has(sh.employeeId)) daysWorked.set(sh.employeeId, new Set());
+    daysWorked.get(sh.employeeId)!.add(sh.dayOfWeek);
+  }
+  for (const [employeeId, days] of daysWorked) {
+    if (days.size > maxWorkingDays) {
+      const emp = empById.get(employeeId);
+      gaps.push({
+        kind: "DAYS_OFF",
+        severity: "BLOCKING",
+        dayOfWeek: null,
+        startMin: null,
+        endMin: null,
+        message: `${emp?.name ?? employeeId}: scheduled ${days.size} days — needs at least ${MIN_DAYS_OFF_PER_WEEK} days off (max ${maxWorkingDays} working days).`,
+        detail: { employeeId, daysWorked: days.size, max: maxWorkingDays },
       });
     }
   }

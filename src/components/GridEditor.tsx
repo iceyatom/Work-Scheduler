@@ -43,7 +43,7 @@ export function GridEditor({
                 <td className="sticky left-0 z-10 bg-white px-3 py-2">
                   <div className="flex items-center gap-1.5">
                     <span className="font-medium text-slate-900">{emp.name}</span>
-                    {emp.isManager && <Badge color="purple">Mgr</Badge>}
+                    {emp.isGM ? <Badge color="purple">GM</Badge> : emp.isManager && <Badge color="purple">Mgr</Badge>}
                     {emp.isMinor && <Badge color="amber">Minor</Badge>}
                     {!emp.active && <Badge color="red">Inactive</Badge>}
                   </div>

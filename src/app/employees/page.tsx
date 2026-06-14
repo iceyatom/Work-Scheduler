@@ -21,13 +21,10 @@ function toDraft(e: ApiEmployee): EmployeeDraft {
     isGM: e.isGM,
     isMinor: e.isMinor,
     active: e.active,
-    seniorityMonths: e.seniorityMonths,
     performance: e.performance,
-    certifications: e.certifications,
     minHoursPerWeek: e.minHoursPerWeek,
     maxHoursPerWeek: e.maxHoursPerWeek,
     availability: e.availability.map((a) => ({ dayOfWeek: a.dayOfWeek, startMin: a.startMin, endMin: a.endMin })),
-    preferences: (e.preferences ?? []).map((p) => ({ kind: p.kind, dayOfWeek: p.dayOfWeek, startMin: p.startMin, endMin: p.endMin, weight: p.weight, note: p.note })),
     hardSets: (e.hardSets ?? []).map((h) => ({ dayOfWeek: h.dayOfWeek, startMin: h.startMin, endMin: h.endMin, note: h.note })),
   };
 }
@@ -63,7 +60,7 @@ export default function EmployeesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Employees</h1>
-          <p className="text-sm text-slate-500">Roster, availability, preferences and hard-set shifts.</p>
+          <p className="text-sm text-slate-500">Roster, availability and hard-set shifts.</p>
         </div>
         <Button onClick={() => setEditing(emptyDraft())}>+ Add employee</Button>
       </div>
@@ -87,7 +84,7 @@ export default function EmployeesPage() {
                     {!e.active && <Badge color="red">Inactive</Badge>}
                   </div>
                   <div className="mt-0.5 text-xs text-slate-500">
-                    {e.employmentType === "FULL_TIME" ? "Full-time" : "Part-time"} · {e.seniorityMonths}mo · perf {e.performance} · {e.certifications} certs
+                    {e.employmentType === "FULL_TIME" ? "Full-time" : "Part-time"} · perf {e.performance}
                     {e.maxHoursPerWeek ? ` · ≤${e.maxHoursPerWeek}h/wk` : ""}
                   </div>
                 </div>

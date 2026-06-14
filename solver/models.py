@@ -38,6 +38,7 @@ class StoreConfig(BaseModel):
     minorMaxShiftMin: int
     minorLatestEndMin: int
     schoolNights: list[int]
+    minDaysOffPerWeek: int
     candidateStartStepMin: int
     candidateDurationStepMin: int
 
@@ -46,14 +47,6 @@ class Availability(BaseModel):
     dayOfWeek: int
     startMin: int
     endMin: int
-
-
-class Preference(BaseModel):
-    kind: Literal["PREFER_DAY_OFF", "PREFER_TIME", "AVOID_TIME"]
-    dayOfWeek: Optional[int] = None
-    startMin: Optional[int] = None
-    endMin: Optional[int] = None
-    weight: int = 1
 
 
 class HardSet(BaseModel):
@@ -69,13 +62,10 @@ class Employee(BaseModel):
     isManager: bool
     isGM: bool
     isMinor: bool
-    seniorityMonths: int
     performance: int
-    certifications: int
     minHoursPerWeek: Optional[int] = None
     maxHoursPerWeek: Optional[int] = None
     availability: list[Availability] = []
-    preferences: list[Preference] = []
     hardSets: list[HardSet] = []
 
 

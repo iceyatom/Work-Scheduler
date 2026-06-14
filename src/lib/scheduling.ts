@@ -22,10 +22,10 @@ const SOLVER_URL = process.env.SOLVER_URL ?? "http://localhost:8000";
 const SOLVER_TIME_LIMIT = Number(process.env.SOLVER_TIME_LIMIT_SECONDS ?? 15);
 
 type EmployeeFull = Prisma.EmployeeGetPayload<{
-  include: { availability: true; preferences: true; hardSets: true };
+  include: { availability: true; hardSets: true };
 }>;
 
-const employeeInclude = { availability: true, preferences: true, hardSets: true } as const;
+const employeeInclude = { availability: true, hardSets: true } as const;
 
 // --- Hard-set resolution (templates + one-week overrides, spec §5) ---------
 
@@ -49,16 +49,14 @@ export function toSolverEmployee(emp: EmployeeFull, weekStartISO: string): Solve
     id: emp.id,
     name: emp.name,
     employmentType: emp.employmentType,
-    isManager: emp.isManager,
+    // GM implies manager.
+    isManager: emp.isManager || emp.isGM,
     isGM: emp.isGM,
     isMinor: emp.isMinor,
-    seniorityMonths: emp.seniorityMonths,
     performance: emp.performance,
-    certifications: emp.certifications,
     minHoursPerWeek: emp.minHoursPerWeek,
     maxHoursPerWeek: emp.maxHoursPerWeek,
     availability: emp.availability.map((a) => ({ dayOfWeek: a.dayOfWeek, startMin: a.startMin, endMin: a.endMin })),
-    preferences: emp.preferences.map((p) => ({ kind: p.kind, dayOfWeek: p.dayOfWeek, startMin: p.startMin, endMin: p.endMin, weight: p.weight })),
     hardSets: resolveHardSets(emp.hardSets, weekStartISO),
   };
 }

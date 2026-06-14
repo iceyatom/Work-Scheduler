@@ -11,8 +11,8 @@
 //   • Employment type & weekly hour caps come from the printed weekly totals.
 //   • Dianna is treated as the GM with a recurring hard-set opening shift,
 //     reflecting her standing 5:00 AM open in the data.
-//   • No preferences are seeded (by request). The `Tracks ID:` comments are the
-//     real employee IDs from the export, kept for traceability.
+//   • The `Tracks ID:` comments are the real employee IDs from the export, kept
+//     for traceability.
 
 import { PrismaClient, EmploymentType } from "@prisma/client";
 
@@ -27,9 +27,7 @@ type Seed = {
   isManager?: boolean;
   isGM?: boolean;
   isMinor?: boolean;
-  seniorityMonths: number;
   performance: number;
-  certifications: number;
   minHoursPerWeek?: number;
   maxHoursPerWeek?: number;
   // Availability envelope; defaults to all 7 days unless `days` is given.
@@ -44,9 +42,7 @@ const crew: Seed[] = [
     employmentType: "FULL_TIME",
     isManager: true,
     isGM: true,
-    seniorityMonths: 144,
     performance: 5,
-    certifications: 6,
     minHoursPerWeek: 38,
     maxHoursPerWeek: 46,
     availability: [{ startMin: T(5), endMin: T(15) }],
@@ -57,9 +53,7 @@ const crew: Seed[] = [
     name: "Jaclyn F", // Tracks ID: 0006 — mid/close, weekly 36:30
     employmentType: "FULL_TIME",
     isManager: true,
-    seniorityMonths: 96,
     performance: 5,
-    certifications: 5,
     minHoursPerWeek: 34,
     maxHoursPerWeek: 42,
     availability: [{ startMin: T(10), endMin: T(24, 30) }],
@@ -68,9 +62,7 @@ const crew: Seed[] = [
     name: "Kiera b", // Tracks ID: 0007 — closer, weekly 38:00
     employmentType: "FULL_TIME",
     isManager: true,
-    seniorityMonths: 72,
     performance: 4,
-    certifications: 5,
     minHoursPerWeek: 34,
     maxHoursPerWeek: 42,
     availability: [{ startMin: T(15), endMin: T(24, 30) }],
@@ -79,9 +71,7 @@ const crew: Seed[] = [
     name: "Nicole W", // Tracks ID: 1279 — mid/close, long shifts, weekly 46:30
     employmentType: "FULL_TIME",
     isManager: true,
-    seniorityMonths: 84,
     performance: 5,
-    certifications: 5,
     minHoursPerWeek: 40,
     maxHoursPerWeek: 48,
     availability: [{ startMin: T(9), endMin: T(24, 30) }],
@@ -91,9 +81,7 @@ const crew: Seed[] = [
   {
     name: "Adalynn W", // Tracks ID: 1431 — mid/close, weekly 37:30
     employmentType: "FULL_TIME",
-    seniorityMonths: 40,
     performance: 4,
-    certifications: 2,
     minHoursPerWeek: 32,
     maxHoursPerWeek: 40,
     availability: [{ startMin: T(9), endMin: T(24) }],
@@ -101,9 +89,7 @@ const crew: Seed[] = [
   {
     name: "Benedicta A", // Tracks ID: 1438 — opener with some closes, weekly 40:00
     employmentType: "FULL_TIME",
-    seniorityMonths: 50,
     performance: 4,
-    certifications: 3,
     minHoursPerWeek: 32,
     maxHoursPerWeek: 42,
     availability: [{ startMin: T(6), endMin: T(24) }],
@@ -111,9 +97,7 @@ const crew: Seed[] = [
   {
     name: "James M", // Tracks ID: 1430 — opener (5 AM–12 PM), weekly 34:00
     employmentType: "FULL_TIME",
-    seniorityMonths: 60,
     performance: 4,
-    certifications: 2,
     minHoursPerWeek: 30,
     maxHoursPerWeek: 40,
     availability: [{ startMin: T(5), endMin: T(14) }],
@@ -121,9 +105,7 @@ const crew: Seed[] = [
   {
     name: "Kole K", // Tracks ID: 1359 — closer, weekly 32:30
     employmentType: "FULL_TIME",
-    seniorityMonths: 30,
     performance: 4,
-    certifications: 2,
     minHoursPerWeek: 28,
     maxHoursPerWeek: 38,
     availability: [{ startMin: T(14), endMin: T(24, 30) }],
@@ -131,9 +113,7 @@ const crew: Seed[] = [
   {
     name: "Nahidul I", // Tracks ID: 1402 — mid/close, weekly 38:30
     employmentType: "FULL_TIME",
-    seniorityMonths: 36,
     performance: 4,
-    certifications: 2,
     minHoursPerWeek: 32,
     maxHoursPerWeek: 42,
     availability: [{ startMin: T(8), endMin: T(24) }],
@@ -141,9 +121,7 @@ const crew: Seed[] = [
   {
     name: "Sakeenah Q", // Tracks ID: 1444 — open-to-close flexible, weekly 33:30
     employmentType: "FULL_TIME",
-    seniorityMonths: 28,
     performance: 4,
-    certifications: 2,
     minHoursPerWeek: 30,
     maxHoursPerWeek: 40,
     availability: [{ startMin: T(5), endMin: T(24) }],
@@ -151,9 +129,7 @@ const crew: Seed[] = [
   {
     name: "Trevor M", // Tracks ID: 1429 — opener, weekly 33:30
     employmentType: "FULL_TIME",
-    seniorityMonths: 44,
     performance: 4,
-    certifications: 2,
     minHoursPerWeek: 32,
     maxHoursPerWeek: 40,
     availability: [{ startMin: T(5), endMin: T(17) }],
@@ -161,9 +137,7 @@ const crew: Seed[] = [
   {
     name: "Tristan H", // Tracks ID: 1424 — closer, weekly 35:15
     employmentType: "FULL_TIME",
-    seniorityMonths: 24,
     performance: 3,
-    certifications: 1,
     minHoursPerWeek: 30,
     maxHoursPerWeek: 40,
     availability: [{ startMin: T(16), endMin: T(24, 30) }],
@@ -173,63 +147,49 @@ const crew: Seed[] = [
   {
     name: "aja j", // Tracks ID: 1439 — mid/close, weekly 21:30
     employmentType: "PART_TIME",
-    seniorityMonths: 14,
     performance: 3,
-    certifications: 1,
     maxHoursPerWeek: 24,
     availability: [{ startMin: T(12), endMin: T(22) }],
   },
   {
     name: "Daisy B", // Tracks ID: 0010 — mid, weekly 14:30
     employmentType: "PART_TIME",
-    seniorityMonths: 10,
     performance: 3,
-    certifications: 1,
     maxHoursPerWeek: 20,
     availability: [{ startMin: T(11), endMin: T(22) }],
   },
   {
     name: "Easton V", // Tracks ID: 1360 — short evening shifts, weekly 17:30
     employmentType: "PART_TIME",
-    seniorityMonths: 8,
     performance: 3,
-    certifications: 0,
     maxHoursPerWeek: 18,
     availability: [{ startMin: T(16), endMin: T(23) }],
   },
   {
     name: "Eraj G", // Tracks ID: 1437 — mid, weekly 17:30
     employmentType: "PART_TIME",
-    seniorityMonths: 16,
     performance: 3,
-    certifications: 1,
     maxHoursPerWeek: 20,
     availability: [{ startMin: T(10), endMin: T(18) }],
   },
   {
     name: "Isaiah K", // Tracks ID: 1428 — evening, weekly ~5:30
     employmentType: "PART_TIME",
-    seniorityMonths: 6,
     performance: 2,
-    certifications: 0,
     maxHoursPerWeek: 16,
     availability: [{ startMin: T(17), endMin: T(24) }],
   },
   {
     name: "Jonathan H", // Tracks ID: 1339 — evening, weekly 9:00
     employmentType: "PART_TIME",
-    seniorityMonths: 5,
     performance: 3,
-    certifications: 0,
     maxHoursPerWeek: 16,
     availability: [{ startMin: T(18), endMin: T(24, 30) }],
   },
   {
     name: "Reese P", // Tracks ID: 1422 — mid/close, weekly 19:00
     employmentType: "PART_TIME",
-    seniorityMonths: 12,
     performance: 3,
-    certifications: 1,
     maxHoursPerWeek: 22,
     availability: [{ startMin: T(11), endMin: T(22) }],
   },
@@ -243,7 +203,6 @@ async function main() {
   await prisma.schedule.deleteMany();
   await prisma.personnelChange.deleteMany();
   await prisma.availability.deleteMany();
-  await prisma.preference.deleteMany();
   await prisma.hardSetAssignment.deleteMany();
   await prisma.employee.deleteMany();
 
@@ -253,19 +212,16 @@ async function main() {
       data: {
         name: s.name,
         employmentType: s.employmentType,
-        isManager: s.isManager ?? false,
+        // GM implies manager.
+        isManager: (s.isManager ?? false) || (s.isGM ?? false),
         isGM: s.isGM ?? false,
         isMinor: s.isMinor ?? false,
-        seniorityMonths: s.seniorityMonths,
         performance: s.performance,
-        certifications: s.certifications,
         minHoursPerWeek: s.minHoursPerWeek ?? null,
         maxHoursPerWeek: s.maxHoursPerWeek ?? null,
         availability: {
           create: s.availability.flatMap((a) => (a.days ?? ALL_DAYS).map((d) => ({ dayOfWeek: d, startMin: a.startMin, endMin: a.endMin }))),
         },
-        // No preferences seeded (by request).
-        preferences: { create: [] },
         hardSets: {
           create: (s.hardSets ?? []).flatMap((h) => h.days.map((d) => ({ dayOfWeek: d, startMin: h.startMin, endMin: h.endMin, note: h.note ?? null }))),
         },

@@ -30,17 +30,15 @@ model Employee {
   isMinor        Boolean        @default(false) // school-night limits apply
   active         Boolean        @default(true)  // false once terminated / suspended
 
-  // Priority-weighting inputs (spec §5.1)
-  seniorityMonths Int   @default(0)
+  // Priority-weighting input (spec §5.1). Hours flow to FT staff and higher
+  // performers first.
   performance     Int   @default(3) // 1 (low) … 5 (high)
-  certifications  Int   @default(0) // count of certifications held
 
   // Optional weekly hour bounds used by the solver objective.
   minHoursPerWeek Int?
   maxHoursPerWeek Int?
 
   availability      Availability[]
-  preferences       Preference[]
   hardSets          HardSetAssignment[]
   assignments       Assignment[]
   personnelChanges  PersonnelChange[]
@@ -57,27 +55,6 @@ model Availability {
   dayOfWeek  Int // 0 = Monday … 6 = Sunday
   startMin   Int // minutes from midnight
   endMin     Int
-
-  @@index([employeeId])
-}
-
-enum PreferenceKind {
-  PREFER_DAY_OFF // prefers not to work on dayOfWeek
-  PREFER_TIME    // prefers to work within [startMin,endMin] on dayOfWeek (null = any day)
-  AVOID_TIME     // prefers to avoid working within [startMin,endMin]
-}
-
-// Soft inputs the solver honours where possible (spec §5 "preferences").
-model Preference {
-  id         String         @id @default(cuid())
-  employee   Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  employeeId String
-  kind       PreferenceKind
-  dayOfWeek  Int? // null = applies to all days
-  startMin   Int?
-  endMin     Int?
-  weight     Int            @default(1) // relative strength of this preference
-  note       String?
 
   @@index([employeeId])
 }

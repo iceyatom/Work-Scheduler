@@ -7,7 +7,6 @@ import { toHHMM, parseHHMM } from "@/lib/time";
 import { sendJSON } from "@/lib/client";
 
 type Window = { dayOfWeek: number; startMin: number; endMin: number };
-type Pref = { kind: "PREFER_DAY_OFF" | "PREFER_TIME" | "AVOID_TIME"; dayOfWeek: number | null; startMin: number | null; endMin: number | null; weight: number; note?: string | null };
 type HardSet = { dayOfWeek: number; startMin: number; endMin: number; note?: string | null };
 
 export interface EmployeeDraft {
@@ -18,13 +17,10 @@ export interface EmployeeDraft {
   isGM: boolean;
   isMinor: boolean;
   active: boolean;
-  seniorityMonths: number;
   performance: number;
-  certifications: number;
   minHoursPerWeek: number | null;
   maxHoursPerWeek: number | null;
   availability: Window[];
-  preferences: Pref[];
   hardSets: HardSet[];
 }
 
@@ -36,13 +32,10 @@ export function emptyDraft(): EmployeeDraft {
     isGM: false,
     isMinor: false,
     active: true,
-    seniorityMonths: 0,
     performance: 3,
-    certifications: 0,
     minHoursPerWeek: null,
     maxHoursPerWeek: null,
     availability: [],
-    preferences: [],
     hardSets: [],
   };
 }
@@ -99,31 +92,33 @@ export function EmployeeForm({ initial, onClose, onSaved }: { initial: EmployeeD
           </div>
 
           <div className="flex flex-wrap gap-4 text-sm">
-            {([
-              ["isManager", "Manager"],
-              ["isGM", "GM (10.5h shifts)"],
-              ["isMinor", "Minor"],
-              ["active", "Active"],
-            ] as const).map(([k, label]) => (
-              <label key={k} className="flex items-center gap-1.5">
-                <input type="checkbox" checked={d[k] as boolean} onChange={(e) => set({ [k]: e.target.checked } as Partial<EmployeeDraft>)} />
-                {label}
-              </label>
-            ))}
+            {/* GM overrides Manager: checking GM forces (and locks) Manager on. */}
+            <label className="flex items-center gap-1.5">
+              <input type="checkbox" checked={d.isManager || d.isGM} disabled={d.isGM} onChange={(e) => set({ isManager: e.target.checked })} />
+              Manager
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={d.isGM}
+                onChange={(e) => set(e.target.checked ? { isGM: true, isManager: true } : { isGM: false })}
+              />
+              GM (10.5h shifts)
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input type="checkbox" checked={d.isMinor} onChange={(e) => set({ isMinor: e.target.checked })} />
+              Minor
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input type="checkbox" checked={d.active} onChange={(e) => set({ active: e.target.checked })} />
+              Active
+            </label>
           </div>
 
-          <div className="grid grid-cols-4 gap-3 text-sm">
-            <label>
-              <span className="mb-1 block font-medium text-slate-600">Seniority (mo)</span>
-              <input type="number" className="w-full rounded border border-slate-300 px-2 py-1.5" value={d.seniorityMonths} onChange={(e) => set({ seniorityMonths: Number(e.target.value) })} />
-            </label>
+          <div className="grid grid-cols-2 gap-3 text-sm">
             <label>
               <span className="mb-1 block font-medium text-slate-600">Performance 1–5</span>
               <input type="number" min={1} max={5} className="w-full rounded border border-slate-300 px-2 py-1.5" value={d.performance} onChange={(e) => set({ performance: Number(e.target.value) })} />
-            </label>
-            <label>
-              <span className="mb-1 block font-medium text-slate-600">Certs</span>
-              <input type="number" min={0} className="w-full rounded border border-slate-300 px-2 py-1.5" value={d.certifications} onChange={(e) => set({ certifications: Number(e.target.value) })} />
             </label>
             <label>
               <span className="mb-1 block font-medium text-slate-600">Min/Max h/wk</span>
@@ -162,43 +157,6 @@ export function EmployeeForm({ initial, onClose, onSaved }: { initial: EmployeeD
                 <TimeField value={h.startMin} onChange={(v) => updateAt(d.hardSets, i, { startMin: v }, (next) => set({ hardSets: next }))} />
                 <span className="text-slate-400">to</span>
                 <TimeField value={h.endMin} onChange={(v) => updateAt(d.hardSets, i, { endMin: v }, (next) => set({ hardSets: next }))} />
-              </>
-            )}
-          />
-
-          {/* Preferences */}
-          <ListEditor
-            title="Preferences (soft)"
-            items={d.preferences}
-            onAdd={() => set({ preferences: [...d.preferences, { kind: "PREFER_DAY_OFF", dayOfWeek: 0, startMin: null, endMin: null, weight: 1 }] })}
-            onRemove={(i) => set({ preferences: d.preferences.filter((_, idx) => idx !== i) })}
-            render={(p, i) => (
-              <>
-                <select
-                  className="rounded border border-slate-300 px-1 py-1 text-sm"
-                  value={p.kind}
-                  onChange={(e) => updateAt(d.preferences, i, { kind: e.target.value as Pref["kind"] }, (next) => set({ preferences: next }))}
-                >
-                  <option value="PREFER_DAY_OFF">Prefer day off</option>
-                  <option value="PREFER_TIME">Prefer time</option>
-                  <option value="AVOID_TIME">Avoid time</option>
-                </select>
-                <DaySelect value={p.dayOfWeek ?? 0} onChange={(v) => updateAt(d.preferences, i, { dayOfWeek: v }, (next) => set({ preferences: next }))} />
-                {p.kind !== "PREFER_DAY_OFF" && (
-                  <>
-                    <TimeField value={p.startMin ?? 9 * 60} onChange={(v) => updateAt(d.preferences, i, { startMin: v }, (next) => set({ preferences: next }))} />
-                    <TimeField value={p.endMin ?? 17 * 60} onChange={(v) => updateAt(d.preferences, i, { endMin: v }, (next) => set({ preferences: next }))} />
-                  </>
-                )}
-                <input
-                  type="number"
-                  min={1}
-                  max={10}
-                  title="weight"
-                  className="w-14 rounded border border-slate-300 px-1 py-1 text-sm"
-                  value={p.weight}
-                  onChange={(e) => updateAt(d.preferences, i, { weight: Number(e.target.value) }, (next) => set({ preferences: next }))}
-                />
               </>
             )}
           />

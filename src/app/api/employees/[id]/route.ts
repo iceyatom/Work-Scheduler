@@ -9,7 +9,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   return handle(async () => {
     const employee = await prisma.employee.findUnique({
       where: { id: params.id },
-      include: { availability: true, preferences: true, hardSets: true },
+      include: { availability: true, hardSets: true },
     });
     return employee ? ok(employee) : notFound("Employee not found");
   });
@@ -22,7 +22,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     // Only replace nested collections that were actually present in the request
     // (zod defaults would otherwise turn an omitted array into an empty one).
     const sentAvailability = "availability" in raw;
-    const sentPreferences = "preferences" in raw;
     const sentHardSets = "hardSets" in raw;
 
     // Replace nested collections wholesale when provided (simple & predictable).
@@ -32,13 +31,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         data: {
           name: body.name,
           employmentType: body.employmentType,
-          isManager: body.isManager,
+          // GM implies manager (the GM box overrides the manager box).
+          isManager: body.isGM === true ? true : body.isManager,
           isGM: body.isGM,
           isMinor: body.isMinor,
           active: body.active,
-          seniorityMonths: body.seniorityMonths,
           performance: body.performance,
-          certifications: body.certifications,
           minHoursPerWeek: body.minHoursPerWeek,
           maxHoursPerWeek: body.maxHoursPerWeek,
         },
@@ -47,20 +45,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       if (sentAvailability && body.availability) {
         await tx.availability.deleteMany({ where: { employeeId: params.id } });
         await tx.availability.createMany({ data: body.availability.map((a) => ({ ...a, employeeId: params.id })) });
-      }
-      if (sentPreferences && body.preferences) {
-        await tx.preference.deleteMany({ where: { employeeId: params.id } });
-        await tx.preference.createMany({
-          data: body.preferences.map((p) => ({
-            employeeId: params.id,
-            kind: p.kind,
-            dayOfWeek: p.dayOfWeek ?? null,
-            startMin: p.startMin ?? null,
-            endMin: p.endMin ?? null,
-            weight: p.weight ?? 1,
-            note: p.note ?? null,
-          })),
-        });
       }
       if (sentHardSets && body.hardSets) {
         await tx.hardSetAssignment.deleteMany({ where: { employeeId: params.id } });
@@ -76,7 +60,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         });
       }
 
-      return tx.employee.findUnique({ where: { id: params.id }, include: { availability: true, preferences: true, hardSets: true } });
+      return tx.employee.findUnique({ where: { id: params.id }, include: { availability: true, hardSets: true } });
     });
 
     return result ? ok(result) : notFound("Employee not found");

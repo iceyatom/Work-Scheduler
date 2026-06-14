@@ -82,6 +82,11 @@ export const MINOR_LATEST_END_MIN = 22 * 60; // 1320 (not past 10:00 PM)
  */
 export const SCHOOL_NIGHTS: number[] = [6, 0, 1, 2, 3];
 
+// --- Weekly days off -------------------------------------------------------
+/** Every employee must get at least this many days off per week (i.e. work at
+ *  most daysPerWeek - this many days). */
+export const MIN_DAYS_OFF_PER_WEEK = 2;
+
 // --- Solver tuning ---------------------------------------------------------
 /** Start-time grid for candidate shift generation (minutes). */
 export const CANDIDATE_START_STEP_MIN = 30;
@@ -114,6 +119,7 @@ export function storeConfig() {
     minorMaxShiftMin: MINOR_MAX_SHIFT_MIN,
     minorLatestEndMin: MINOR_LATEST_END_MIN,
     schoolNights: SCHOOL_NIGHTS,
+    minDaysOffPerWeek: MIN_DAYS_OFF_PER_WEEK,
     candidateStartStepMin: CANDIDATE_START_STEP_MIN,
     candidateDurationStepMin: CANDIDATE_DURATION_STEP_MIN,
   };

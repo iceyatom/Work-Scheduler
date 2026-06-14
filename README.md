@@ -1,8 +1,8 @@
 # Work Schedule Generator
 
 Constraint-based automated weekly scheduling for a quick-service-restaurant store
-(Taco Bell). The tool generates an optimized weekly staff schedule from
-availability + preferences, lets a manager edit it with live validation, surfaces
+(Taco Bell). The tool generates an optimized weekly staff schedule from each
+employee's availability, lets a manager edit it with live validation, surfaces
 unmet targets as a **gap report**, and exports an import-ready file for Taco Bell
 Tracks (the downstream labor system).
 
@@ -33,7 +33,7 @@ This repository is a **functional local prototype** of the system described in
 - **Database** — PostgreSQL 16. Runs in **Docker**.
 
 The solver is **stateless**: the Next.js app sends it the full problem (employees,
-availability, preferences, store config) as JSON and gets back assignments + a gap
+availability, store config) as JSON and gets back assignments + a gap
 report. Prisma owns all persistence. See *Prototype deviations from the spec* below
 for how this maps to the target AWS architecture.
 
@@ -99,7 +99,7 @@ docker compose down         # stop the stack (data persists in a volume)
 | **Slider editor** with live validation | Click any grid cell | §7.5 |
 | **Gap report** (blocking vs. warning) | Schedule → Gap report | §7.6 |
 | **Tracks export** (CSV) | Schedule → *Tracks export* | §7.4 |
-| **Manage employees** (availability, preferences, hard-sets) | Employees | §5 |
+| **Manage employees** (availability, hard-sets) | Employees | §5 |
 | **Queue personnel changes** + **incremental re-solve** | Change queue → then *Apply changes & re-solve* | §6, F-2 |
 
 ---
@@ -113,14 +113,13 @@ A **shift-selection** CP-SAT model (`solver/engine.py`):
    ≤4h minors on school nights), and the minor not-past-10pm rule.
 2. A boolean variable selects **at most one** candidate per employee per day.
 3. **Hard constraints** (cannot be violated): per-day late-night cap (≤2 after
-   cutoff), 80h/day labor hard cap, weekly max-hours, and the structural rules
-   baked into candidate generation. Hard-set shifts (e.g. the GM) are fixed
-   constants.
+   cutoff), 80h/day labor hard cap, weekly max-hours, **≥2 days off per week**
+   (≤5 working days per employee), and the structural rules baked into candidate
+   generation. Hard-set shifts (e.g. the GM) are fixed constants.
 4. **Soft constraints** (weighted penalties, always feasible): manager presence,
    baseline floor (3) / target (4), rush target (5), 70h/day minimum, 75h/day soft
-   cap, weekly minimums, preferences, and priority weighting (FT / seniority /
-   certs / performance). In **RESOLVE** mode an extra stability term keeps existing
-   shifts unchanged.
+   cap, weekly minimums, and priority weighting (FT over PT, and performance). In
+   **RESOLVE** mode an extra stability term keeps existing shifts unchanged.
 5. The result is mapped back to assignments, and a **gap report** is computed and
    returned.
 
@@ -158,6 +157,7 @@ to the solver on every request). Mirrored as defaults in `solver/models.py`.
 | Shift length | 4–8.5h regular, ≤10.5h GM, ≤4h minor (school night) |
 | Unpaid lunch | 30 min auto-inserted for shifts > 5h |
 | Minor school nights | ≤4h and not past 10:00 PM (Sun–Thu nights) |
+| Days off | ≥2 per employee per week, i.e. ≤5 working days (hard) |
 
 ---
 

@@ -9,7 +9,7 @@ export async function GET() {
   return handle(async () => {
     const employees = await prisma.employee.findMany({
       orderBy: [{ isManager: "desc" }, { name: "asc" }],
-      include: { availability: true, preferences: true, hardSets: true },
+      include: { availability: true, hardSets: true },
     });
     return ok(employees);
   });
@@ -22,17 +22,15 @@ export async function POST(req: Request) {
       data: {
         name: body.name,
         employmentType: body.employmentType,
-        isManager: body.isManager,
+        // GM implies manager (the GM box overrides the manager box).
+        isManager: body.isManager || body.isGM,
         isGM: body.isGM,
         isMinor: body.isMinor,
         active: body.active,
-        seniorityMonths: body.seniorityMonths,
         performance: body.performance,
-        certifications: body.certifications,
         minHoursPerWeek: body.minHoursPerWeek ?? null,
         maxHoursPerWeek: body.maxHoursPerWeek ?? null,
         availability: { create: body.availability },
-        preferences: { create: body.preferences.map((p) => ({ ...p, weight: p.weight ?? 1 })) },
         hardSets: {
           create: body.hardSets.map((h) => ({
             dayOfWeek: h.dayOfWeek,
@@ -43,7 +41,7 @@ export async function POST(req: Request) {
           })),
         },
       },
-      include: { availability: true, preferences: true, hardSets: true },
+      include: { availability: true, hardSets: true },
     });
     return ok(employee, { status: 201 });
   });

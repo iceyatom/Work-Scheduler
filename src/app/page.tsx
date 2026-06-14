@@ -77,7 +77,7 @@ export default function DashboardPage() {
       <Card className="p-5">
         <h2 className="mb-1 text-lg font-semibold text-slate-900">Generate a new schedule</h2>
         <p className="mb-4 text-sm text-slate-500">
-          F-1 · builds an optimal weekly schedule from a blank slate using the current roster, availability and preferences.
+          F-1 · builds an optimal weekly schedule from a blank slate using the current roster and availability.
         </p>
         <div className="flex flex-wrap items-end gap-4">
           <label className="text-sm">

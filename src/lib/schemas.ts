@@ -6,15 +6,6 @@ const availability = z.object({
   endMin: z.number().int().min(0).max(1470),
 });
 
-const preference = z.object({
-  kind: z.enum(["PREFER_DAY_OFF", "PREFER_TIME", "AVOID_TIME"]),
-  dayOfWeek: z.number().int().min(0).max(6).nullable().optional(),
-  startMin: z.number().int().nullable().optional(),
-  endMin: z.number().int().nullable().optional(),
-  weight: z.number().int().min(1).max(10).default(1),
-  note: z.string().nullable().optional(),
-});
-
 const hardSet = z.object({
   dayOfWeek: z.number().int().min(0).max(6),
   startMin: z.number().int().min(0).max(1470),
@@ -30,13 +21,10 @@ export const employeeInput = z.object({
   isGM: z.boolean().default(false),
   isMinor: z.boolean().default(false),
   active: z.boolean().default(true),
-  seniorityMonths: z.number().int().min(0).default(0),
   performance: z.number().int().min(1).max(5).default(3),
-  certifications: z.number().int().min(0).default(0),
   minHoursPerWeek: z.number().int().min(0).nullable().optional(),
   maxHoursPerWeek: z.number().int().min(0).nullable().optional(),
   availability: z.array(availability).default([]),
-  preferences: z.array(preference).default([]),
   hardSets: z.array(hardSet).default([]),
 });
 

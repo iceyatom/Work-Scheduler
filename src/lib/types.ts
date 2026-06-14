@@ -11,16 +11,6 @@ export interface SolverAvailability {
   endMin: number;
 }
 
-export type PreferenceKind = "PREFER_DAY_OFF" | "PREFER_TIME" | "AVOID_TIME";
-
-export interface SolverPreference {
-  kind: PreferenceKind;
-  dayOfWeek: number | null;
-  startMin: number | null;
-  endMin: number | null;
-  weight: number;
-}
-
 export interface SolverHardSet {
   dayOfWeek: number;
   startMin: number;
@@ -34,13 +24,10 @@ export interface SolverEmployee {
   isManager: boolean;
   isGM: boolean;
   isMinor: boolean;
-  seniorityMonths: number;
   performance: number;
-  certifications: number;
   minHoursPerWeek: number | null;
   maxHoursPerWeek: number | null;
   availability: SolverAvailability[];
-  preferences: SolverPreference[];
   hardSets: SolverHardSet[];
 }
 
@@ -78,7 +65,7 @@ export type GapKind =
   | "MINOR_RULE"
   | "SHIFT_RULE"
   | "AVAILABILITY"
-  | "PREFERENCE_UNMET";
+  | "DAYS_OFF";
 
 export type GapSeverity = "BLOCKING" | "WARNING";
 
