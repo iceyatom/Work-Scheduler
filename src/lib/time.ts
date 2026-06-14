@@ -39,6 +39,18 @@ export function toHHMM(min: number): string {
   return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
 }
 
+/**
+ * Convert an <input type="time"> value (HH:MM, 0–1439) to store-day minutes.
+ * The store day runs 5:00 AM → 12:30 AM next day, so any clock time before the
+ * store opens (e.g. 12:30 AM) belongs to the *next* day and is mapped past
+ * midnight (12:30 AM -> 1470, not 30). This is the inverse of toHHMM and stops
+ * a "8 PM – 12:30 AM" shift from reading as a negative-length shift.
+ */
+export function parseStoreTime(hhmm: string): number {
+  const m = parseHHMM(hhmm);
+  return m < STORE_OPEN_MIN ? m + 1440 : m;
+}
+
 /** Snap a minute value to the scheduling slot grid. */
 export function snapToSlot(min: number): number {
   return Math.round(min / SLOT_MINUTES) * SLOT_MINUTES;

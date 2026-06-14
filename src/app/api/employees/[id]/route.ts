@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
-import { handle, notFound, ok } from "@/lib/api";
+import { handle, notFound, ok, badRequest } from "@/lib/api";
 import { employeeUpdate } from "@/lib/schemas";
+import { validateEmployee } from "@/lib/employee-validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +24,20 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     // (zod defaults would otherwise turn an omitted array into an empty one).
     const sentAvailability = "availability" in raw;
     const sentHardSets = "hardSets" in raw;
+
+    // Validate the full employee when the edit form sends the complete payload.
+    if (sentAvailability && sentHardSets && body.employmentType) {
+      const errors = validateEmployee({
+        name: body.name ?? "",
+        employmentType: body.employmentType,
+        performance: body.performance ?? 3,
+        minHoursPerWeek: body.minHoursPerWeek ?? null,
+        maxHoursPerWeek: body.maxHoursPerWeek ?? null,
+        availability: body.availability ?? [],
+        hardSets: body.hardSets ?? [],
+      });
+      if (errors.length) return badRequest("Employee validation failed", errors);
+    }
 
     // Replace nested collections wholesale when provided (simple & predictable).
     const result = await prisma.$transaction(async (tx) => {

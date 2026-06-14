@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { Button, Spinner } from "@/components/ui";
 import { DAY_NAMES } from "@/lib/constants";
-import { toHHMM, parseHHMM } from "@/lib/time";
+import { toHHMM, parseStoreTime } from "@/lib/time";
+import { validateEmployee } from "@/lib/employee-validation";
 import { sendJSON } from "@/lib/client";
 
 type Window = { dayOfWeek: number; startMin: number; endMin: number };
@@ -41,7 +42,7 @@ export function emptyDraft(): EmployeeDraft {
 }
 
 function TimeField({ value, onChange }: { value: number; onChange: (min: number) => void }) {
-  return <input type="time" step={900} value={toHHMM(value)} onChange={(e) => onChange(parseHHMM(e.target.value))} className="rounded border border-slate-300 px-2 py-1 text-sm" />;
+  return <input type="time" step={900} value={toHHMM(value)} onChange={(e) => onChange(parseStoreTime(e.target.value))} className="rounded border border-slate-300 px-2 py-1 text-sm" />;
 }
 
 export function EmployeeForm({ initial, onClose, onSaved }: { initial: EmployeeDraft; onClose: () => void; onSaved: () => void }) {
@@ -49,6 +50,8 @@ export function EmployeeForm({ initial, onClose, onSaved }: { initial: EmployeeD
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const set = (patch: Partial<EmployeeDraft>) => setD((cur) => ({ ...cur, ...patch }));
+
+  const errors = validateEmployee(d);
 
   async function save() {
     setSaving(true);
@@ -162,11 +165,20 @@ export function EmployeeForm({ initial, onClose, onSaved }: { initial: EmployeeD
           />
         </div>
 
-        <div className="mt-6 flex justify-end gap-2">
+        {errors.length > 0 && (
+          <ul className="mt-5 space-y-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            {errors.map((msg, i) => (
+              <li key={i}>⚠️ {msg}</li>
+            ))}
+          </ul>
+        )}
+
+        <div className="mt-6 flex items-center justify-end gap-2">
+          {errors.length > 0 && <span className="mr-auto text-xs text-slate-500">Resolve {errors.length} issue{errors.length > 1 ? "s" : ""} to save.</span>}
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={save} disabled={saving || !d.name.trim()}>
+          <Button onClick={save} disabled={saving || errors.length > 0}>
             {saving ? <Spinner /> : "Save"}
           </Button>
         </div>

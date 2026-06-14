@@ -87,6 +87,12 @@ export const SCHOOL_NIGHTS: number[] = [6, 0, 1, 2, 3];
  *  most daysPerWeek - this many days). */
 export const MIN_DAYS_OFF_PER_WEEK = 2;
 
+// --- Employment-type hour thresholds (used for input validation) -----------
+/** A full-time employee's weekly hour cap must be at least this. */
+export const FULL_TIME_MIN_WEEKLY_HOURS = 30;
+/** A part-time employee's weekly hours must not exceed this. */
+export const PART_TIME_MAX_WEEKLY_HOURS = 35;
+
 // --- Solver tuning ---------------------------------------------------------
 /** Start-time grid for candidate shift generation (minutes). */
 export const CANDIDATE_START_STEP_MIN = 30;

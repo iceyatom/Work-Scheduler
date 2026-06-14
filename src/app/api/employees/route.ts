@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
-import { handle, ok } from "@/lib/api";
+import { handle, ok, badRequest } from "@/lib/api";
 import { employeeInput } from "@/lib/schemas";
+import { validateEmployee } from "@/lib/employee-validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,6 +19,16 @@ export async function GET() {
 export async function POST(req: Request) {
   return handle(async () => {
     const body = employeeInput.parse(await req.json());
+    const errors = validateEmployee({
+      name: body.name,
+      employmentType: body.employmentType,
+      performance: body.performance,
+      minHoursPerWeek: body.minHoursPerWeek ?? null,
+      maxHoursPerWeek: body.maxHoursPerWeek ?? null,
+      availability: body.availability,
+      hardSets: body.hardSets,
+    });
+    if (errors.length) return badRequest("Employee validation failed", errors);
     const employee = await prisma.employee.create({
       data: {
         name: body.name,

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Button, Card, Spinner, Badge, ErrorBanner } from "@/components/ui";
 import { getJSON, sendJSON } from "@/lib/client";
 import { DAY_NAMES } from "@/lib/constants";
-import { formatMinutesShort, toHHMM, parseHHMM } from "@/lib/time";
+import { formatMinutesShort, toHHMM, parseStoreTime } from "@/lib/time";
 
 interface ChangeRow {
   id: string;
@@ -156,9 +156,9 @@ export default function ChangesPage() {
               </label>
               {partial && (
                 <div className="flex items-center gap-1 pb-1">
-                  <input type="time" step={900} value={toHHMM(startMin)} onChange={(e) => setStartMin(parseHHMM(e.target.value))} className="rounded border border-slate-300 px-2 py-1.5" />
+                  <input type="time" step={900} value={toHHMM(startMin)} onChange={(e) => setStartMin(parseStoreTime(e.target.value))} className="rounded border border-slate-300 px-2 py-1.5" />
                   <span className="text-slate-400">to</span>
-                  <input type="time" step={900} value={toHHMM(endMin)} onChange={(e) => setEndMin(parseHHMM(e.target.value))} className="rounded border border-slate-300 px-2 py-1.5" />
+                  <input type="time" step={900} value={toHHMM(endMin)} onChange={(e) => setEndMin(parseStoreTime(e.target.value))} className="rounded border border-slate-300 px-2 py-1.5" />
                 </div>
               )}
             </>
@@ -197,8 +197,8 @@ export default function ChangesPage() {
                       </option>
                     ))}
                   </select>
-                  <input type="time" step={900} value={toHHMM(w.startMin)} onChange={(e) => setAvailWindows(availWindows.map((x, idx) => (idx === i ? { ...x, startMin: parseHHMM(e.target.value) } : x)))} className="rounded border border-slate-300 px-1 py-1 text-sm" />
-                  <input type="time" step={900} value={toHHMM(w.endMin)} onChange={(e) => setAvailWindows(availWindows.map((x, idx) => (idx === i ? { ...x, endMin: parseHHMM(e.target.value) } : x)))} className="rounded border border-slate-300 px-1 py-1 text-sm" />
+                  <input type="time" step={900} value={toHHMM(w.startMin)} onChange={(e) => setAvailWindows(availWindows.map((x, idx) => (idx === i ? { ...x, startMin: parseStoreTime(e.target.value) } : x)))} className="rounded border border-slate-300 px-1 py-1 text-sm" />
+                  <input type="time" step={900} value={toHHMM(w.endMin)} onChange={(e) => setAvailWindows(availWindows.map((x, idx) => (idx === i ? { ...x, endMin: parseStoreTime(e.target.value) } : x)))} className="rounded border border-slate-300 px-1 py-1 text-sm" />
                   <button onClick={() => setAvailWindows(availWindows.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-red-600">
                     ✕
                   </button>
