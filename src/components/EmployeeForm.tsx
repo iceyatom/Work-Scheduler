@@ -1,0 +1,261 @@
+"use client";
+
+import { useState } from "react";
+import { Button, Spinner } from "@/components/ui";
+import { DAY_NAMES } from "@/lib/constants";
+import { toHHMM, parseHHMM } from "@/lib/time";
+import { sendJSON } from "@/lib/client";
+
+type Window = { dayOfWeek: number; startMin: number; endMin: number };
+type Pref = { kind: "PREFER_DAY_OFF" | "PREFER_TIME" | "AVOID_TIME"; dayOfWeek: number | null; startMin: number | null; endMin: number | null; weight: number; note?: string | null };
+type HardSet = { dayOfWeek: number; startMin: number; endMin: number; note?: string | null };
+
+export interface EmployeeDraft {
+  id?: string;
+  name: string;
+  employmentType: "FULL_TIME" | "PART_TIME";
+  isManager: boolean;
+  isGM: boolean;
+  isMinor: boolean;
+  active: boolean;
+  seniorityMonths: number;
+  performance: number;
+  certifications: number;
+  minHoursPerWeek: number | null;
+  maxHoursPerWeek: number | null;
+  availability: Window[];
+  preferences: Pref[];
+  hardSets: HardSet[];
+}
+
+export function emptyDraft(): EmployeeDraft {
+  return {
+    name: "",
+    employmentType: "PART_TIME",
+    isManager: false,
+    isGM: false,
+    isMinor: false,
+    active: true,
+    seniorityMonths: 0,
+    performance: 3,
+    certifications: 0,
+    minHoursPerWeek: null,
+    maxHoursPerWeek: null,
+    availability: [],
+    preferences: [],
+    hardSets: [],
+  };
+}
+
+function TimeField({ value, onChange }: { value: number; onChange: (min: number) => void }) {
+  return <input type="time" step={900} value={toHHMM(value)} onChange={(e) => onChange(parseHHMM(e.target.value))} className="rounded border border-slate-300 px-2 py-1 text-sm" />;
+}
+
+export function EmployeeForm({ initial, onClose, onSaved }: { initial: EmployeeDraft; onClose: () => void; onSaved: () => void }) {
+  const [d, setD] = useState<EmployeeDraft>(initial);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const set = (patch: Partial<EmployeeDraft>) => setD((cur) => ({ ...cur, ...patch }));
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      if (d.id) await sendJSON(`/api/employees/${d.id}`, "PATCH", d);
+      else await sendJSON("/api/employees", "POST", d);
+      onSaved();
+    } catch (e) {
+      setError((e as Error).message);
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4" onClick={onClose}>
+      <div className="my-8 w-full max-w-2xl rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-slate-900">{d.id ? "Edit employee" : "Add employee"}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+            ✕
+          </button>
+        </div>
+
+        {error && <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+
+        <div className="space-y-5">
+          {/* Basics */}
+          <div className="grid grid-cols-2 gap-4">
+            <label className="text-sm">
+              <span className="mb-1 block font-medium text-slate-600">Name</span>
+              <input className="w-full rounded border border-slate-300 px-2 py-1.5" value={d.name} onChange={(e) => set({ name: e.target.value })} />
+            </label>
+            <label className="text-sm">
+              <span className="mb-1 block font-medium text-slate-600">Employment type</span>
+              <select className="w-full rounded border border-slate-300 px-2 py-1.5" value={d.employmentType} onChange={(e) => set({ employmentType: e.target.value as EmployeeDraft["employmentType"] })}>
+                <option value="FULL_TIME">Full-time</option>
+                <option value="PART_TIME">Part-time</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="flex flex-wrap gap-4 text-sm">
+            {([
+              ["isManager", "Manager"],
+              ["isGM", "GM (10.5h shifts)"],
+              ["isMinor", "Minor"],
+              ["active", "Active"],
+            ] as const).map(([k, label]) => (
+              <label key={k} className="flex items-center gap-1.5">
+                <input type="checkbox" checked={d[k] as boolean} onChange={(e) => set({ [k]: e.target.checked } as Partial<EmployeeDraft>)} />
+                {label}
+              </label>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-4 gap-3 text-sm">
+            <label>
+              <span className="mb-1 block font-medium text-slate-600">Seniority (mo)</span>
+              <input type="number" className="w-full rounded border border-slate-300 px-2 py-1.5" value={d.seniorityMonths} onChange={(e) => set({ seniorityMonths: Number(e.target.value) })} />
+            </label>
+            <label>
+              <span className="mb-1 block font-medium text-slate-600">Performance 1–5</span>
+              <input type="number" min={1} max={5} className="w-full rounded border border-slate-300 px-2 py-1.5" value={d.performance} onChange={(e) => set({ performance: Number(e.target.value) })} />
+            </label>
+            <label>
+              <span className="mb-1 block font-medium text-slate-600">Certs</span>
+              <input type="number" min={0} className="w-full rounded border border-slate-300 px-2 py-1.5" value={d.certifications} onChange={(e) => set({ certifications: Number(e.target.value) })} />
+            </label>
+            <label>
+              <span className="mb-1 block font-medium text-slate-600">Min/Max h/wk</span>
+              <div className="flex gap-1">
+                <input type="number" placeholder="min" className="w-full rounded border border-slate-300 px-1 py-1.5" value={d.minHoursPerWeek ?? ""} onChange={(e) => set({ minHoursPerWeek: e.target.value === "" ? null : Number(e.target.value) })} />
+                <input type="number" placeholder="max" className="w-full rounded border border-slate-300 px-1 py-1.5" value={d.maxHoursPerWeek ?? ""} onChange={(e) => set({ maxHoursPerWeek: e.target.value === "" ? null : Number(e.target.value) })} />
+              </div>
+            </label>
+          </div>
+
+          {/* Availability */}
+          <ListEditor
+            title="Availability windows"
+            items={d.availability}
+            onAdd={() => set({ availability: [...d.availability, { dayOfWeek: 0, startMin: 9 * 60, endMin: 17 * 60 }] })}
+            onRemove={(i) => set({ availability: d.availability.filter((_, idx) => idx !== i) })}
+            render={(w, i) => (
+              <>
+                <DaySelect value={w.dayOfWeek} onChange={(v) => updateAt(d.availability, i, { dayOfWeek: v }, (next) => set({ availability: next }))} />
+                <TimeField value={w.startMin} onChange={(v) => updateAt(d.availability, i, { startMin: v }, (next) => set({ availability: next }))} />
+                <span className="text-slate-400">to</span>
+                <TimeField value={w.endMin} onChange={(v) => updateAt(d.availability, i, { endMin: v }, (next) => set({ availability: next }))} />
+              </>
+            )}
+          />
+
+          {/* Hard-set shifts */}
+          <ListEditor
+            title="Hard-set shifts (recurring lock, e.g. GM)"
+            items={d.hardSets}
+            onAdd={() => set({ hardSets: [...d.hardSets, { dayOfWeek: 0, startMin: 6 * 60, endMin: 16 * 60 + 30 }] })}
+            onRemove={(i) => set({ hardSets: d.hardSets.filter((_, idx) => idx !== i) })}
+            render={(h, i) => (
+              <>
+                <DaySelect value={h.dayOfWeek} onChange={(v) => updateAt(d.hardSets, i, { dayOfWeek: v }, (next) => set({ hardSets: next }))} />
+                <TimeField value={h.startMin} onChange={(v) => updateAt(d.hardSets, i, { startMin: v }, (next) => set({ hardSets: next }))} />
+                <span className="text-slate-400">to</span>
+                <TimeField value={h.endMin} onChange={(v) => updateAt(d.hardSets, i, { endMin: v }, (next) => set({ hardSets: next }))} />
+              </>
+            )}
+          />
+
+          {/* Preferences */}
+          <ListEditor
+            title="Preferences (soft)"
+            items={d.preferences}
+            onAdd={() => set({ preferences: [...d.preferences, { kind: "PREFER_DAY_OFF", dayOfWeek: 0, startMin: null, endMin: null, weight: 1 }] })}
+            onRemove={(i) => set({ preferences: d.preferences.filter((_, idx) => idx !== i) })}
+            render={(p, i) => (
+              <>
+                <select
+                  className="rounded border border-slate-300 px-1 py-1 text-sm"
+                  value={p.kind}
+                  onChange={(e) => updateAt(d.preferences, i, { kind: e.target.value as Pref["kind"] }, (next) => set({ preferences: next }))}
+                >
+                  <option value="PREFER_DAY_OFF">Prefer day off</option>
+                  <option value="PREFER_TIME">Prefer time</option>
+                  <option value="AVOID_TIME">Avoid time</option>
+                </select>
+                <DaySelect value={p.dayOfWeek ?? 0} onChange={(v) => updateAt(d.preferences, i, { dayOfWeek: v }, (next) => set({ preferences: next }))} />
+                {p.kind !== "PREFER_DAY_OFF" && (
+                  <>
+                    <TimeField value={p.startMin ?? 9 * 60} onChange={(v) => updateAt(d.preferences, i, { startMin: v }, (next) => set({ preferences: next }))} />
+                    <TimeField value={p.endMin ?? 17 * 60} onChange={(v) => updateAt(d.preferences, i, { endMin: v }, (next) => set({ preferences: next }))} />
+                  </>
+                )}
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  title="weight"
+                  className="w-14 rounded border border-slate-300 px-1 py-1 text-sm"
+                  value={p.weight}
+                  onChange={(e) => updateAt(d.preferences, i, { weight: Number(e.target.value) }, (next) => set({ preferences: next }))}
+                />
+              </>
+            )}
+          />
+        </div>
+
+        <div className="mt-6 flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={save} disabled={saving || !d.name.trim()}>
+            {saving ? <Spinner /> : "Save"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function updateAt<T>(arr: T[], i: number, patch: Partial<T>, commit: (next: T[]) => void) {
+  commit(arr.map((item, idx) => (idx === i ? { ...item, ...patch } : item)));
+}
+
+function DaySelect({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  return (
+    <select className="rounded border border-slate-300 px-1 py-1 text-sm" value={value} onChange={(e) => onChange(Number(e.target.value))}>
+      {DAY_NAMES.map((d, i) => (
+        <option key={d} value={i}>
+          {d.slice(0, 3)}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function ListEditor<T>({ title, items, onAdd, onRemove, render }: { title: string; items: T[]; onAdd: () => void; onRemove: (i: number) => void; render: (item: T, i: number) => React.ReactNode }) {
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between">
+        <span className="text-sm font-medium text-slate-600">{title}</span>
+        <Button variant="ghost" onClick={onAdd} className="text-brand">
+          + Add
+        </Button>
+      </div>
+      {items.length === 0 ? (
+        <p className="text-xs text-slate-400">None</p>
+      ) : (
+        <div className="space-y-1.5">
+          {items.map((item, i) => (
+            <div key={i} className="flex flex-wrap items-center gap-2 rounded-md bg-slate-50 px-2 py-1.5">
+              {render(item, i)}
+              <button onClick={() => onRemove(i)} className="ml-auto text-slate-400 hover:text-red-600" title="Remove">
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

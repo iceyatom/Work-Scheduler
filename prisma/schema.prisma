@@ -1,0 +1,235 @@
+// Prisma is the single source of truth for the application schema & migrations.
+// Times are stored as integer "minutes from midnight" (e.g. 5:00 AM = 300,
+// 12:30 AM next day = 1470). Day-of-week is 0 = Monday … 6 = Sunday so the
+// per-day late-night cutoffs line up with their array index.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// People & personnel inputs (spec §5)
+// ---------------------------------------------------------------------------
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+}
+
+model Employee {
+  id             String         @id @default(cuid())
+  name           String
+  employmentType EmploymentType @default(PART_TIME)
+  isManager      Boolean        @default(false) // can satisfy the manager-presence rule
+  isGM           Boolean        @default(false) // general manager: 10.5h shift cap, usually hard-set
+  isMinor        Boolean        @default(false) // school-night limits apply
+  active         Boolean        @default(true)  // false once terminated / suspended
+
+  // Priority-weighting inputs (spec §5.1)
+  seniorityMonths Int   @default(0)
+  performance     Int   @default(3) // 1 (low) … 5 (high)
+  certifications  Int   @default(0) // count of certifications held
+
+  // Optional weekly hour bounds used by the solver objective.
+  minHoursPerWeek Int?
+  maxHoursPerWeek Int?
+
+  availability      Availability[]
+  preferences       Preference[]
+  hardSets          HardSetAssignment[]
+  assignments       Assignment[]
+  personnelChanges  PersonnelChange[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Recurring weekly windows the person can work (spec §5 "general availability").
+model Availability {
+  id         String   @id @default(cuid())
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId String
+  dayOfWeek  Int // 0 = Monday … 6 = Sunday
+  startMin   Int // minutes from midnight
+  endMin     Int
+
+  @@index([employeeId])
+}
+
+enum PreferenceKind {
+  PREFER_DAY_OFF // prefers not to work on dayOfWeek
+  PREFER_TIME    // prefers to work within [startMin,endMin] on dayOfWeek (null = any day)
+  AVOID_TIME     // prefers to avoid working within [startMin,endMin]
+}
+
+// Soft inputs the solver honours where possible (spec §5 "preferences").
+model Preference {
+  id         String         @id @default(cuid())
+  employee   Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId String
+  kind       PreferenceKind
+  dayOfWeek  Int? // null = applies to all days
+  startMin   Int?
+  endMin     Int?
+  weight     Int            @default(1) // relative strength of this preference
+  note       String?
+
+  @@index([employeeId])
+}
+
+// Manager-locked shift treated as a fixed constant by the solver (spec §5).
+// weekStart == null  -> recurring template (applies every week)
+// weekStart != null  -> one-week override for that specific week & day
+model HardSetAssignment {
+  id         String    @id @default(cuid())
+  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId String
+  dayOfWeek  Int
+  startMin   Int
+  endMin     Int
+  weekStart  DateTime? @db.Date
+  note       String?
+
+  @@index([employeeId])
+}
+
+// ---------------------------------------------------------------------------
+// Generated schedules (spec §7, §8)
+// ---------------------------------------------------------------------------
+
+enum ScheduleStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum GeneratedFrom {
+  BLANK   // F-1: generated from a blank slate
+  RESOLVE // F-2: produced by incremental re-solve of a prior schedule
+}
+
+model Schedule {
+  id            String         @id @default(cuid())
+  name          String
+  weekStart     DateTime       @db.Date // Monday of the scheduled week
+  status        ScheduleStatus @default(DRAFT)
+  generatedFrom GeneratedFrom  @default(BLANK)
+
+  solverStatus   String? // OPTIMAL / FEASIBLE / INFEASIBLE / ...
+  objectiveValue Float?
+  solveMs        Int?
+
+  // Gap report (unmet soft constraints) stored as JSONB (spec §7.6, §10).
+  gaps Json?
+  meta Json?
+
+  assignments Assignment[]
+  jobs        Job[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum AssignmentSource {
+  SOLVER
+  MANUAL
+  HARDSET
+}
+
+model Assignment {
+  id         String   @id @default(cuid())
+  schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  scheduleId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId String
+
+  dayOfWeek     Int
+  startMin      Int
+  endMin        Int
+  breakStartMin Int? // start of the 30-min unpaid lunch, null if shift <= 5h
+  paidMinutes   Int  // (endMin - startMin) minus the unpaid break
+
+  locked Boolean          @default(false) // pinned (hard-set or manager-locked)
+  source AssignmentSource @default(SOLVER)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([scheduleId])
+  @@index([employeeId])
+}
+
+// ---------------------------------------------------------------------------
+// Queued personnel changes for incremental re-solve (spec §6, F-2)
+// ---------------------------------------------------------------------------
+
+enum ChangeType {
+  DAY_OFF
+  TERMINATION
+  SUSPENSION
+  LEAVE_OF_ABSENCE
+  AVAILABILITY_CHANGE
+}
+
+enum ChangeStatus {
+  QUEUED
+  APPLIED
+  DISCARDED
+}
+
+model PersonnelChange {
+  id         String       @id @default(cuid())
+  employee   Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId String
+  type       ChangeType
+  status     ChangeStatus @default(QUEUED)
+
+  dayOfWeek Int? // for whole/partial day-off (null = all days / going forward)
+  startMin  Int? // partial-day-off window, or new availability window start
+  endMin    Int?
+  note      String?
+
+  // Structured details (e.g. list of new availability windows for AVAILABILITY_CHANGE).
+  payload Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeId])
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Async solve jobs. Locally these run synchronously; the model mirrors the
+// SQS-backed async flow in the target architecture (spec §10).
+// ---------------------------------------------------------------------------
+
+enum JobType {
+  GENERATE
+  RESOLVE
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  DONE
+  FAILED
+}
+
+model Job {
+  id         String    @id @default(cuid())
+  type       JobType
+  status     JobStatus @default(QUEUED)
+  schedule   Schedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  scheduleId String?
+  error      String?
+  request    Json?
+  result     Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

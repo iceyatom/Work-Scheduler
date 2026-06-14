@@ -1,0 +1,50 @@
+# ----------------------------------------------------------------------------
+# Local development stack for the Work Schedule Generator.
+#
+#   db      - PostgreSQL 16, the application database (Prisma owns the schema).
+#   solver  - Python + OR-Tools CP-SAT scheduling service (FastAPI).
+#
+# The Next.js frontend is run on the host with `npm run dev` (see README).
+# It talks to `db` on localhost:5432 and `solver` on localhost:8000.
+#
+#   docker compose up -d           # start db + solver (builds solver image)
+#   docker compose logs -f solver  # tail solver logs
+#   docker compose down            # stop everything (data persists in volume)
+#   docker compose down -v         # stop and wipe the database volume
+# ----------------------------------------------------------------------------
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: scheduler-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-scheduler}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-scheduler}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  solver:
+    build:
+      context: ./solver
+    container_name: scheduler-solver
+    restart: unless-stopped
+    environment:
+      SOLVER_TIME_LIMIT_SECONDS: ${SOLVER_TIME_LIMIT_SECONDS:-15}
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

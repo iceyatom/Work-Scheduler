@@ -1,0 +1,322 @@
+// ---------------------------------------------------------------------------
+// Validation engine (spec build-order stage 2).
+//
+// Pure, dependency-free functions that:
+//   * derive the unpaid-lunch break & paid minutes for a shift (spec §4),
+//   * validate a single shift against the structural rules (slider live
+//     validation, spec §7.5), and
+//   * compute the full gap report for a set of assignments (spec §7.6).
+//
+// The same GapItem shape is produced by the Python solver, so the UI can
+// recompute gaps locally after a manual edit without a solver round-trip.
+// ---------------------------------------------------------------------------
+
+import {
+  BASELINE_FLOOR_STAFF,
+  BASELINE_TARGET_STAFF,
+  DAILY_LABOR_HARD_CAP_MIN,
+  DAILY_LABOR_MIN_MIN,
+  DAILY_LABOR_SOFT_CAP_MIN,
+  DAY_NAMES,
+  GM_SHIFT_MAX_MIN,
+  LATE_NIGHT_CUTOFF_MIN,
+  LATE_NIGHT_MAX_STAFF,
+  LUNCH_BREAK_MIN,
+  LUNCH_BREAK_THRESHOLD_MIN,
+  MANAGER_MIN_ON_SITE,
+  MINOR_LATEST_END_MIN,
+  MINOR_MAX_SHIFT_MIN,
+  REGULAR_SHIFT_MAX_MIN,
+  REGULAR_SHIFT_MIN_MIN,
+  RUSH_TARGET_STAFF,
+  RUSH_WINDOWS,
+  SCHOOL_NIGHTS,
+  SLOTS_PER_DAY,
+  SLOT_MINUTES,
+  STORE_CLOSE_MIN,
+  STORE_OPEN_MIN,
+} from "./constants";
+import { formatMinutesShort, snapToSlot } from "./time";
+import type { GapItem, GapSeverity } from "./types";
+
+export interface EmployeeLite {
+  id: string;
+  name: string;
+  isManager: boolean;
+  isGM: boolean;
+  isMinor: boolean;
+  availability: { dayOfWeek: number; startMin: number; endMin: number }[];
+}
+
+export interface ShiftLite {
+  employeeId: string;
+  dayOfWeek: number;
+  startMin: number;
+  endMin: number;
+  breakStartMin: number | null;
+  paidMinutes: number;
+}
+
+// --- Shift derivation ------------------------------------------------------
+
+/** Derive the unpaid-lunch break & paid minutes for a shift (spec §4). */
+export function deriveShift(startMin: number, endMin: number): {
+  breakStartMin: number | null;
+  paidMinutes: number;
+} {
+  const duration = endMin - startMin;
+  if (duration > LUNCH_BREAK_THRESHOLD_MIN) {
+    // Centre the 30-min break, snapped to the slot grid.
+    let breakStart = snapToSlot(startMin + Math.floor(duration / 2) - LUNCH_BREAK_MIN / 2);
+    breakStart = Math.max(startMin + SLOT_MINUTES, Math.min(breakStart, endMin - SLOT_MINUTES - LUNCH_BREAK_MIN));
+    return { breakStartMin: breakStart, paidMinutes: duration - LUNCH_BREAK_MIN };
+  }
+  return { breakStartMin: null, paidMinutes: duration };
+}
+
+// General per-shift max. The minor 4h cap is a *school-night* rule, enforced
+// separately in validateShift; on other nights minors follow the regular max.
+export function maxShiftMinFor(emp: { isGM: boolean }): number {
+  if (emp.isGM) return GM_SHIFT_MAX_MIN;
+  return REGULAR_SHIFT_MAX_MIN;
+}
+
+// --- Single-shift validation (slider live validation) ----------------------
+
+export interface ShiftViolation {
+  severity: GapSeverity;
+  message: string;
+}
+
+/** Validate one proposed shift against the structural rules. Returns an empty
+ *  array when the shift is legal. Used by the slider editor for live feedback. */
+export function validateShift(emp: EmployeeLite, dayOfWeek: number, startMin: number, endMin: number): ShiftViolation[] {
+  const out: ShiftViolation[] = [];
+  const duration = endMin - startMin;
+
+  if (endMin <= startMin) {
+    out.push({ severity: "BLOCKING", message: "End time must be after start time." });
+    return out;
+  }
+  if (startMin < STORE_OPEN_MIN || endMin > STORE_CLOSE_MIN) {
+    out.push({
+      severity: "BLOCKING",
+      message: `Shift is outside store hours (${formatMinutesShort(STORE_OPEN_MIN)}–${formatMinutesShort(STORE_CLOSE_MIN)}).`,
+    });
+  }
+
+  const maxShift = maxShiftMinFor(emp);
+  if (duration < REGULAR_SHIFT_MIN_MIN) {
+    out.push({
+      severity: "BLOCKING",
+      message: `Shift is shorter than the ${REGULAR_SHIFT_MIN_MIN / 60}h minimum.`,
+    });
+  }
+  if (duration > maxShift) {
+    out.push({
+      severity: "BLOCKING",
+      message: `Shift exceeds the ${(maxShift / 60).toFixed(1)}h maximum${emp.isGM ? " (GM)" : ""}.`,
+    });
+  }
+
+  // Minor school-night limits (spec §4).
+  if (emp.isMinor && SCHOOL_NIGHTS.includes(dayOfWeek)) {
+    if (endMin > MINOR_LATEST_END_MIN) {
+      out.push({
+        severity: "BLOCKING",
+        message: `Minor cannot work past ${formatMinutesShort(MINOR_LATEST_END_MIN)} on a school night.`,
+      });
+    }
+    if (duration > MINOR_MAX_SHIFT_MIN) {
+      out.push({
+        severity: "BLOCKING",
+        message: `Minor cannot work more than ${MINOR_MAX_SHIFT_MIN / 60}h on a school night.`,
+      });
+    }
+  }
+
+  // Availability (spec §5): shift must fall inside one availability window.
+  const windows = emp.availability.filter((a) => a.dayOfWeek === dayOfWeek);
+  if (windows.length > 0) {
+    const covered = windows.some((w) => startMin >= w.startMin && endMin <= w.endMin);
+    if (!covered) {
+      out.push({ severity: "BLOCKING", message: `${emp.name} is not available for this time on ${DAY_NAMES[dayOfWeek]}.` });
+    }
+  } else {
+    out.push({ severity: "WARNING", message: `${emp.name} has no availability recorded for ${DAY_NAMES[dayOfWeek]}.` });
+  }
+
+  return out;
+}
+
+// --- Coverage --------------------------------------------------------------
+
+function shiftCoversSlot(shift: ShiftLite, slotStartMin: number): boolean {
+  const slotEnd = slotStartMin + SLOT_MINUTES;
+  if (shift.startMin > slotStartMin || shift.endMin < slotEnd) return false;
+  if (shift.breakStartMin != null) {
+    const bEnd = shift.breakStartMin + LUNCH_BREAK_MIN;
+    // On unpaid break -> not counted as staffed.
+    if (slotStartMin >= shift.breakStartMin && slotStartMin < bEnd) return false;
+  }
+  return true;
+}
+
+export interface DayCoverage {
+  staff: number[]; // length SLOTS_PER_DAY
+  managers: number[];
+}
+
+export function coverageForDay(shifts: ShiftLite[], empById: Map<string, EmployeeLite>, dayOfWeek: number): DayCoverage {
+  const staff = new Array(SLOTS_PER_DAY).fill(0);
+  const managers = new Array(SLOTS_PER_DAY).fill(0);
+  const dayShifts = shifts.filter((s) => s.dayOfWeek === dayOfWeek);
+  for (let i = 0; i < SLOTS_PER_DAY; i++) {
+    const slotStart = STORE_OPEN_MIN + i * SLOT_MINUTES;
+    for (const sh of dayShifts) {
+      if (shiftCoversSlot(sh, slotStart)) {
+        staff[i]++;
+        if (empById.get(sh.employeeId)?.isManager) managers[i]++;
+      }
+    }
+  }
+  return { staff, managers };
+}
+
+function inRush(slotStartMin: number): boolean {
+  const slotEnd = slotStartMin + SLOT_MINUTES;
+  return RUSH_WINDOWS.some((w) => slotStartMin >= w.startMin && slotEnd <= w.endMin);
+}
+
+function isLateNight(dayOfWeek: number, slotStartMin: number): boolean {
+  return slotStartMin >= LATE_NIGHT_CUTOFF_MIN[dayOfWeek];
+}
+
+// Merge consecutive slots that share a gap into a single ranged GapItem.
+function emitRanges(
+  dayOfWeek: number,
+  flags: (null | { severity: GapSeverity; have: number; need: number })[],
+  kind: GapItem["kind"],
+  label: (have: number, need: number) => string,
+  out: GapItem[],
+) {
+  let i = 0;
+  while (i < flags.length) {
+    const f = flags[i];
+    if (!f) {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j + 1 < flags.length && flags[j + 1] && flags[j + 1]!.severity === f.severity && flags[j + 1]!.have === f.have && flags[j + 1]!.need === f.need) {
+      j++;
+    }
+    const startMin = STORE_OPEN_MIN + i * SLOT_MINUTES;
+    const endMin = STORE_OPEN_MIN + (j + 1) * SLOT_MINUTES;
+    out.push({
+      kind,
+      severity: f.severity,
+      dayOfWeek,
+      startMin,
+      endMin,
+      message: `${DAY_NAMES[dayOfWeek]} ${formatMinutesShort(startMin)}–${formatMinutesShort(endMin)}: ${label(f.have, f.need)}`,
+      detail: { have: f.have, need: f.need },
+    });
+    i = j + 1;
+  }
+}
+
+/** Compute the full gap report for a week of assignments (spec §7.6). */
+export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[]): GapItem[] {
+  const empById = new Map(employees.map((e) => [e.id, e]));
+  const gaps: GapItem[] = [];
+
+  for (let day = 0; day < 7; day++) {
+    const { staff, managers } = coverageForDay(shifts, empById, day);
+
+    // Manager presence (spec §2) – blocking whenever the store is "open" and
+    // staffed but no manager is present.
+    const mgrFlags: (null | { severity: GapSeverity; have: number; need: number })[] = managers.map((m, i) => {
+      const anyOpenCoverage = staff[i] > 0;
+      return m < MANAGER_MIN_ON_SITE && anyOpenCoverage
+        ? ({ severity: "BLOCKING" as const, have: m, need: MANAGER_MIN_ON_SITE })
+        : null;
+    });
+    emitRanges(day, mgrFlags, "MANAGER_ABSENCE", (h) => `no manager on site (have ${h})`, gaps);
+
+    // Late-night cap (spec §3.3) – blocking when more than 2 staff after cutoff.
+    const lateFlags = staff.map((c, i) => {
+      const slotStart = STORE_OPEN_MIN + i * SLOT_MINUTES;
+      return isLateNight(day, slotStart) && c > LATE_NIGHT_MAX_STAFF
+        ? ({ severity: "BLOCKING" as const, have: c, need: LATE_NIGHT_MAX_STAFF })
+        : null;
+    });
+    emitRanges(day, lateFlags, "LATE_NIGHT_OVER_CAP", (h, n) => `${h} staff after late-night cutoff (max ${n})`, gaps);
+
+    // Rush coverage (spec §3.1).
+    const rushFlags = staff.map((c, i) => {
+      const slotStart = STORE_OPEN_MIN + i * SLOT_MINUTES;
+      return inRush(slotStart) && !isLateNight(day, slotStart) && c < RUSH_TARGET_STAFF
+        ? ({ severity: "WARNING" as const, have: c, need: RUSH_TARGET_STAFF })
+        : null;
+    });
+    emitRanges(day, rushFlags, "RUSH_BELOW_TARGET", (h, n) => `rush staffed ${h} (target ${n})`, gaps);
+
+    // Baseline coverage (spec §3.2) – floor 3 (blocking), target 4 (warning).
+    const baseFlags = staff.map((c, i) => {
+      const slotStart = STORE_OPEN_MIN + i * SLOT_MINUTES;
+      if (inRush(slotStart) || isLateNight(day, slotStart)) return null;
+      if (c < BASELINE_FLOOR_STAFF) return { severity: "BLOCKING" as const, have: c, need: BASELINE_FLOOR_STAFF };
+      if (c < BASELINE_TARGET_STAFF) return { severity: "WARNING" as const, have: c, need: BASELINE_TARGET_STAFF };
+      return null;
+    });
+    emitRanges(
+      day,
+      baseFlags,
+      "BASELINE_BELOW_TARGET",
+      (h, n) => (n === BASELINE_FLOOR_STAFF ? `below the ${n}-staff hard floor (have ${h})` : `below the ${n}-staff baseline (have ${h})`),
+      gaps,
+    );
+
+    // Daily labour (spec §2).
+    const dayPaid = shifts.filter((s) => s.dayOfWeek === day).reduce((a, s) => a + s.paidMinutes, 0);
+    if (dayPaid > 0 && dayPaid < DAILY_LABOR_MIN_MIN) {
+      gaps.push(dayLaborGap(day, "LABOR_BELOW_MIN", "WARNING", dayPaid, DAILY_LABOR_MIN_MIN, "below the 70h daily minimum"));
+    } else if (dayPaid > DAILY_LABOR_HARD_CAP_MIN) {
+      gaps.push(dayLaborGap(day, "LABOR_OVER_HARD_CAP", "BLOCKING", dayPaid, DAILY_LABOR_HARD_CAP_MIN, "over the 80h daily hard cap"));
+    } else if (dayPaid > DAILY_LABOR_SOFT_CAP_MIN) {
+      gaps.push(dayLaborGap(day, "LABOR_OVER_SOFT_CAP", "WARNING", dayPaid, DAILY_LABOR_SOFT_CAP_MIN, "over the 75h daily soft cap"));
+    }
+  }
+
+  // Per-shift structural checks (minor rules, shift length, availability).
+  for (const sh of shifts) {
+    const emp = empById.get(sh.employeeId);
+    if (!emp) continue;
+    for (const v of validateShift(emp, sh.dayOfWeek, sh.startMin, sh.endMin)) {
+      gaps.push({
+        kind: v.message.toLowerCase().includes("minor") ? "MINOR_RULE" : v.message.toLowerCase().includes("avail") ? "AVAILABILITY" : "SHIFT_RULE",
+        severity: v.severity,
+        dayOfWeek: sh.dayOfWeek,
+        startMin: sh.startMin,
+        endMin: sh.endMin,
+        message: `${emp.name}: ${v.message}`,
+        detail: { employeeId: emp.id },
+      });
+    }
+  }
+
+  return gaps;
+}
+
+function dayLaborGap(day: number, kind: GapItem["kind"], severity: GapSeverity, have: number, need: number, label: string): GapItem {
+  return {
+    kind,
+    severity,
+    dayOfWeek: day,
+    startMin: null,
+    endMin: null,
+    message: `${DAY_NAMES[day]}: ${(have / 60).toFixed(1)}h scheduled — ${label}.`,
+    detail: { have, need },
+  };
+}
