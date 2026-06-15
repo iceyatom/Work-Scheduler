@@ -307,9 +307,16 @@ def _solve_phase(
             staff = model.NewIntVar(0, ub, f"staff_{day}_{s}")
             model.Add(staff == sum(x[i] for i in cand_idxs) + bstaff)
 
-            # HARD: late-night cap (spec §3.3).
-            if is_late(day, slot_min):
-                model.Add(staff <= cfg.lateNightMaxStaff)
+            # HARD: late-night cap (spec §3.3). Cap only the *decision* staff
+            # against the room left by the fixed base. Hard-sets (and phase-1
+            # managers) can already exceed the cap on their own; that
+            # over-coverage is unavoidable, so it must degrade to a reported gap
+            # rather than making the whole phase INFEASIBLE and dropping every
+            # crew member. (Without this, two managers + a crew hard-set all
+            # closing past the cutoff wiped out all non-hard-set crew.)
+            if is_late(day, slot_min) and cand_idxs:
+                room = max(0, cfg.lateNightMaxStaff - bstaff)
+                model.Add(sum(x[i] for i in cand_idxs) <= room)
 
             if manager_phase:
                 # Manager presence: keep >=1 manager on at all open hours. The
@@ -354,7 +361,12 @@ def _solve_phase(
         for day in range(cfg.daysPerWeek):
             daypaid = model.NewIntVar(0, big, f"daypaid_{day}")
             model.Add(daypaid == sum(paid_by_day[day]) + paid_by_day_base[day])
-            model.Add(daypaid <= cfg.dailyLaborHardCapMin)  # HARD: daily hard cap
+            # HARD daily hard cap, applied to the decision portion only: fixed
+            # hard-sets that already blow the cap degrade to a gap, not
+            # infeasibility (same rationale as the late-night cap above).
+            if paid_by_day[day]:
+                room = max(0, cfg.dailyLaborHardCapMin - paid_by_day_base[day])
+                model.Add(sum(paid_by_day[day]) <= room)
             lshort = model.NewIntVar(0, cfg.dailyLaborMinMin, f"lshort_{day}")
             model.Add(lshort >= cfg.dailyLaborMinMin - daypaid)
             obj.append(W_LABOR_MIN * lshort)
@@ -374,8 +386,12 @@ def _solve_phase(
         base = paid_by_emp_base.get(emp.id, 0)
         weekpaid = model.NewIntVar(0, big * cfg.daysPerWeek, f"week_{emp.id}")
         model.Add(weekpaid == (sum(terms) if terms else 0) + base)
-        if emp.maxHoursPerWeek is not None:
-            model.Add(weekpaid <= emp.maxHoursPerWeek * 60)  # HARD upper bound
+        if emp.maxHoursPerWeek is not None and terms:
+            # HARD weekly max, decision portion only — a hard-set already over an
+            # employee's weekly max must not make the phase infeasible (which
+            # would drop every other employee too); it's surfaced as a gap.
+            room = max(0, emp.maxHoursPerWeek * 60 - base)
+            model.Add(sum(terms) <= room)
         if emp.minHoursPerWeek is not None:
             mshort = model.NewIntVar(0, emp.minHoursPerWeek * 60, f"weekshort_{emp.id}")
             model.Add(mshort >= emp.minHoursPerWeek * 60 - weekpaid)
