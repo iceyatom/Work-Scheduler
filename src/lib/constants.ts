@@ -60,6 +60,15 @@ export const RUSH_WINDOWS: { label: string; startMin: number; endMin: number }[]
 export const BASELINE_FLOOR_STAFF = 3; // hard floor (reported as blocking)
 export const BASELINE_TARGET_STAFF = 4; // preferred
 
+// --- Open/close edge hours -------------------------------------------------
+// Keep the first hour the store is open and the last hour before close lean:
+// exactly one manager and one regular (crew) employee. The caps are HARD upper
+// bounds (like the late-night cap); the "one each" target is soft. Outside
+// these two windows, baseline/rush coverage applies normally.
+export const OPEN_EDGE_WINDOW_MIN = 60; // first hour [open, open+60) & last hour [close-60, close)
+export const OPEN_EDGE_MAX_MANAGERS = 1;
+export const OPEN_EDGE_MAX_CREW = 1;
+
 // --- Daily labour target (spec §2) ----------------------------------------
 export const DAILY_LABOR_MIN_MIN = 70 * 60; // 4200  (minimum)
 export const DAILY_LABOR_SOFT_CAP_MIN = 75 * 60; // 4500  (soft cap)
@@ -114,6 +123,9 @@ export function storeConfig() {
     rushWindows: RUSH_WINDOWS,
     baselineFloorStaff: BASELINE_FLOOR_STAFF,
     baselineTargetStaff: BASELINE_TARGET_STAFF,
+    openEdgeWindowMin: OPEN_EDGE_WINDOW_MIN,
+    openEdgeMaxManagers: OPEN_EDGE_MAX_MANAGERS,
+    openEdgeMaxCrew: OPEN_EDGE_MAX_CREW,
     dailyLaborMinMin: DAILY_LABOR_MIN_MIN,
     dailyLaborSoftCapMin: DAILY_LABOR_SOFT_CAP_MIN,
     dailyLaborHardCapMin: DAILY_LABOR_HARD_CAP_MIN,

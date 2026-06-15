@@ -27,6 +27,9 @@ class StoreConfig(BaseModel):
     rushWindows: list[RushWindow]
     baselineFloorStaff: int
     baselineTargetStaff: int
+    openEdgeWindowMin: int
+    openEdgeMaxManagers: int
+    openEdgeMaxCrew: int
     dailyLaborMinMin: int
     dailyLaborSoftCapMin: int
     dailyLaborHardCapMin: int

@@ -6,6 +6,8 @@ import type { GapItem } from "@/lib/types";
 const KIND_LABEL: Record<string, string> = {
   MANAGER_ABSENCE: "Manager",
   LATE_NIGHT_OVER_CAP: "Late-night cap",
+  OPEN_EDGE_OVER_CAP: "Open/close hour",
+  OPEN_EDGE_UNDERSTAFFED: "Open/close hour",
   BASELINE_BELOW_FLOOR: "Baseline floor",
   BASELINE_BELOW_TARGET: "Baseline",
   RUSH_BELOW_TARGET: "Rush",

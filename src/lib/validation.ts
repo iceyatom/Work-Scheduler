@@ -28,6 +28,9 @@ import {
   MIN_DAYS_OFF_PER_WEEK,
   MINOR_LATEST_END_MIN,
   MINOR_MAX_SHIFT_MIN,
+  OPEN_EDGE_MAX_CREW,
+  OPEN_EDGE_MAX_MANAGERS,
+  OPEN_EDGE_WINDOW_MIN,
   REGULAR_SHIFT_MAX_MIN,
   REGULAR_SHIFT_MIN_MIN,
   RUSH_TARGET_STAFF,
@@ -194,21 +197,28 @@ export interface DayCoverage {
   /** Managers present on premises, counting those on their lunch break — a
    *  manager on a 30-min break still satisfies the manager-presence rule. */
   managerPresent: number[];
+  /** Managers actively staffing (excludes anyone on break) — used for the
+   *  open/close-edge composition (one manager + one crew). */
+  managerActive: number[];
 }
 
 export function coverageForDay(shifts: ShiftLite[], empById: Map<string, EmployeeLite>, dayOfWeek: number): DayCoverage {
   const staff = new Array(SLOTS_PER_DAY).fill(0);
   const managerPresent = new Array(SLOTS_PER_DAY).fill(0);
+  const managerActive = new Array(SLOTS_PER_DAY).fill(0);
   const dayShifts = shifts.filter((s) => s.dayOfWeek === dayOfWeek);
   for (let i = 0; i < SLOTS_PER_DAY; i++) {
     const slotStart = STORE_OPEN_MIN + i * SLOT_MINUTES;
     for (const sh of dayShifts) {
       const isMgr = empById.get(sh.employeeId)?.isManager;
-      if (shiftCoversSlot(sh, slotStart)) staff[i]++;
+      if (shiftCoversSlot(sh, slotStart)) {
+        staff[i]++;
+        if (isMgr) managerActive[i]++;
+      }
       if (isMgr && shiftSpansSlot(sh, slotStart)) managerPresent[i]++;
     }
   }
-  return { staff, managerPresent };
+  return { staff, managerPresent, managerActive };
 }
 
 function inRush(slotStartMin: number): boolean {
@@ -218,6 +228,11 @@ function inRush(slotStartMin: number): boolean {
 
 function isLateNight(dayOfWeek: number, slotStartMin: number): boolean {
   return slotStartMin >= LATE_NIGHT_CUTOFF_MIN[dayOfWeek];
+}
+
+/** First hour the store is open, or the last hour before it closes. */
+function isOpenEdge(slotStartMin: number): boolean {
+  return slotStartMin < STORE_OPEN_MIN + OPEN_EDGE_WINDOW_MIN || slotStartMin >= STORE_CLOSE_MIN - OPEN_EDGE_WINDOW_MIN;
 }
 
 // Merge consecutive slots that share a gap into a single ranged GapItem.
@@ -260,7 +275,8 @@ export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[])
   const gaps: GapItem[] = [];
 
   for (let day = 0; day < 7; day++) {
-    const { staff, managerPresent } = coverageForDay(shifts, empById, day);
+    const { staff, managerPresent, managerActive } = coverageForDay(shifts, empById, day);
+    const crewActive = staff.map((c, i) => c - managerActive[i]);
 
     // Manager presence (spec §2) – blocking whenever the store is "open" and
     // staffed but no manager is present. A manager on their lunch break still
@@ -273,10 +289,30 @@ export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[])
     });
     emitRanges(day, mgrFlags, "MANAGER_ABSENCE", (h) => `no manager on site (have ${h})`, gaps);
 
-    // Late-night cap (spec §3.3) – blocking when more than 2 staff after cutoff.
+    // Open/close edge hours – exactly one manager + one crew. Over-coverage is
+    // blocking; missing crew is a warning. These windows supersede the
+    // late-night / rush / baseline rules below.
+    const edgeMax = OPEN_EDGE_MAX_MANAGERS + OPEN_EDGE_MAX_CREW;
+    const edgeOverFlags = staff.map((c, i) => {
+      const slotStart = STORE_OPEN_MIN + i * SLOT_MINUTES;
+      return isOpenEdge(slotStart) && (managerActive[i] > OPEN_EDGE_MAX_MANAGERS || crewActive[i] > OPEN_EDGE_MAX_CREW)
+        ? ({ severity: "BLOCKING" as const, have: c, need: edgeMax })
+        : null;
+    });
+    emitRanges(day, edgeOverFlags, "OPEN_EDGE_OVER_CAP", (h, n) => `${h} working in the open/close hour (max ${n}: one manager + one crew)`, gaps);
+    const edgeUnderFlags = crewActive.map((cw, i) => {
+      const slotStart = STORE_OPEN_MIN + i * SLOT_MINUTES;
+      return isOpenEdge(slotStart) && cw < OPEN_EDGE_MAX_CREW
+        ? ({ severity: "WARNING" as const, have: cw, need: OPEN_EDGE_MAX_CREW })
+        : null;
+    });
+    emitRanges(day, edgeUnderFlags, "OPEN_EDGE_UNDERSTAFFED", (h, n) => `${h} crew in the open/close hour (want ${n})`, gaps);
+
+    // Late-night cap (spec §3.3) – blocking when more than 2 staff after cutoff
+    // (the open/close-edge rule takes over for the last hour).
     const lateFlags = staff.map((c, i) => {
       const slotStart = STORE_OPEN_MIN + i * SLOT_MINUTES;
-      return isLateNight(day, slotStart) && c > LATE_NIGHT_MAX_STAFF
+      return isLateNight(day, slotStart) && !isOpenEdge(slotStart) && c > LATE_NIGHT_MAX_STAFF
         ? ({ severity: "BLOCKING" as const, have: c, need: LATE_NIGHT_MAX_STAFF })
         : null;
     });
@@ -285,7 +321,7 @@ export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[])
     // Rush coverage (spec §3.1).
     const rushFlags = staff.map((c, i) => {
       const slotStart = STORE_OPEN_MIN + i * SLOT_MINUTES;
-      return inRush(slotStart) && !isLateNight(day, slotStart) && c < RUSH_TARGET_STAFF
+      return inRush(slotStart) && !isLateNight(day, slotStart) && !isOpenEdge(slotStart) && c < RUSH_TARGET_STAFF
         ? ({ severity: "WARNING" as const, have: c, need: RUSH_TARGET_STAFF })
         : null;
     });
@@ -294,7 +330,7 @@ export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[])
     // Baseline coverage (spec §3.2) – floor 3 (blocking), target 4 (warning).
     const baseFlags = staff.map((c, i) => {
       const slotStart = STORE_OPEN_MIN + i * SLOT_MINUTES;
-      if (inRush(slotStart) || isLateNight(day, slotStart)) return null;
+      if (inRush(slotStart) || isLateNight(day, slotStart) || isOpenEdge(slotStart)) return null;
       if (c < BASELINE_FLOOR_STAFF) return { severity: "BLOCKING" as const, have: c, need: BASELINE_FLOOR_STAFF };
       if (c < BASELINE_TARGET_STAFF) return { severity: "WARNING" as const, have: c, need: BASELINE_TARGET_STAFF };
       return null;

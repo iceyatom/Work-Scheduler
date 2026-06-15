@@ -28,6 +28,7 @@ W_MANAGER = 1000      # per missing manager, per slot (phase 1) — drives an ev
 W_BASE_FLOOR = 250    # per staff below the hard floor (3), per slot
 W_BASE_TARGET = 25    # per staff below the baseline target (4), per slot
 W_RUSH = 40           # per staff below the rush target (5), per rush slot
+W_OPEN_EDGE = 30      # per crew below the open/close-hour target (1), per edge slot
 W_LABOR_MIN = 2       # per minute below the daily 70h minimum
 W_LABOR_OVER = 3      # per minute over the daily 75h soft cap
 W_MINHOURS = 1        # per minute an employee is below their weekly minimum
@@ -274,6 +275,7 @@ def _solve_phase(
     cand_by_slot: dict[tuple[int, int], list[int]] = {}
     mgr_span_by_slot: dict[tuple[int, int], list[int]] = {}
     base_staff: dict[tuple[int, int], int] = {}
+    base_crew: dict[tuple[int, int], int] = {}  # non-manager fixed (open/close-edge cap)
     base_mgr_span: dict[tuple[int, int], int] = {}
     for i, c in enumerate(candidates):
         for s in c.slots:
@@ -284,6 +286,8 @@ def _solve_phase(
     for f in fixed:
         for s in f.slots:
             base_staff[(f.day, s)] = base_staff.get((f.day, s), 0) + 1
+            if not f.is_manager:
+                base_crew[(f.day, s)] = base_crew.get((f.day, s), 0) + 1
         if f.is_manager:
             for s in f.span:
                 base_mgr_span[(f.day, s)] = base_mgr_span.get((f.day, s), 0) + 1
@@ -298,6 +302,13 @@ def _solve_phase(
 
     def is_late(day: int, slot_min: int) -> bool:
         return slot_min >= cfg.lateNightCutoffMin[day]
+
+    def is_open_edge(slot_min: int) -> bool:
+        """First hour the store is open, or the last hour before it closes."""
+        return (
+            slot_min < cfg.storeOpenMin + cfg.openEdgeWindowMin
+            or slot_min >= cfg.storeCloseMin - cfg.openEdgeWindowMin
+        )
 
     for day in range(cfg.daysPerWeek):
         for s in range(cfg.slotsPerDay):
@@ -318,6 +329,8 @@ def _solve_phase(
                 room = max(0, cfg.lateNightMaxStaff - bstaff)
                 model.Add(sum(x[i] for i in cand_idxs) <= room)
 
+            edge = is_open_edge(slot_min)
+
             if manager_phase:
                 # Manager presence: keep >=1 manager on at all open hours. The
                 # even spread comes from having to cover the whole day; managers
@@ -331,9 +344,31 @@ def _solve_phase(
                 mgr_short = model.NewIntVar(0, cfg.managerMinOnSite, f"mshort_{day}_{s}")
                 model.Add(mgr_short >= cfg.managerMinOnSite - mgr)
                 obj.append(W_MANAGER * mgr_short)
+                # HARD: at most one manager during the first/last open hour, so the
+                # store opens & closes lean. Decision-capped against the fixed base
+                # (hard-set managers can't make the phase infeasible — reported as a
+                # gap instead). Presence (>=1) above drives it to exactly one.
+                if edge and cand_idxs:
+                    room = max(0, cfg.openEdgeMaxManagers - bstaff)
+                    model.Add(sum(x[i] for i in cand_idxs) <= room)
                 continue
 
-            # Crew phase coverage (managers already fixed): baseline & rush.
+            # Crew phase coverage (managers already fixed).
+            if edge:
+                # First/last open hour: exactly one crew member (one manager comes
+                # from phase 1). Baseline/rush do NOT apply here — the edge hour is
+                # intentionally lean. HARD cap on crew (decision-capped) + a soft
+                # nudge toward one.
+                bcrew = base_crew.get((day, s), 0)
+                if cand_idxs:
+                    room = max(0, cfg.openEdgeMaxCrew - bcrew)
+                    model.Add(sum(x[i] for i in cand_idxs) <= room)
+                crew_cnt = model.NewIntVar(0, ub, f"crew_{day}_{s}")
+                model.Add(crew_cnt == sum(x[i] for i in cand_idxs) + bcrew)
+                edge_short = model.NewIntVar(0, cfg.openEdgeMaxCrew, f"eshort_{day}_{s}")
+                model.Add(edge_short >= cfg.openEdgeMaxCrew - crew_cnt)
+                obj.append(W_OPEN_EDGE * edge_short)
+                continue
             if is_late(day, slot_min):
                 continue  # late-night: only the cap applies (closing crew)
             if in_rush(slot_min):
@@ -593,19 +628,29 @@ def compute_gaps(employees: list[Employee], assignments: list[Assignment], cfg: 
     def in_rush(slot_min: int) -> bool:
         return any(rw.startMin <= slot_min and slot_min + cfg.slotMinutes <= rw.endMin for rw in cfg.rushWindows)
 
+    def is_open_edge(slot_min: int) -> bool:
+        return (
+            slot_min < cfg.storeOpenMin + cfg.openEdgeWindowMin
+            or slot_min >= cfg.storeCloseMin - cfg.openEdgeWindowMin
+        )
+
     for day in range(cfg.daysPerWeek):
         day_shifts = [a for a in assignments if a.dayOfWeek == day]
         staff = [0] * cfg.slotsPerDay
         mgr = [0] * cfg.slotsPerDay
+        mgr_active = [0] * cfg.slotsPerDay  # managers actively staffing (excl. break)
         for s in range(cfg.slotsPerDay):
             slot_min = cfg.storeOpenMin + s * cfg.slotMinutes
             for a in day_shifts:
                 is_mgr = emp_by_id.get(a.employeeId) and emp_by_id[a.employeeId].isManager
                 if _covers(a, slot_min, cfg):
                     staff[s] += 1
+                    if is_mgr:
+                        mgr_active[s] += 1
                 # Manager on a lunch break still counts as present (uses span).
                 if is_mgr and _spans(a, slot_min, cfg):
                     mgr[s] += 1
+        crew_active = [staff[s] - mgr_active[s] for s in range(cfg.slotsPerDay)]
 
         mgr_flags = [
             ("BLOCKING", mgr[s], cfg.managerMinOnSite) if (staff[s] > 0 and mgr[s] < cfg.managerMinOnSite) else None
@@ -613,11 +658,30 @@ def compute_gaps(employees: list[Employee], assignments: list[Assignment], cfg: 
         ]
         _emit_ranges(day, mgr_flags, "MANAGER_ABSENCE", lambda h, n: f"no manager on site (have {h})", gaps, cfg)
 
+        # Open/close edge hours: exactly one manager + one crew. Over-coverage is
+        # blocking; missing crew is a warning. These windows are exempt from the
+        # late-night / rush / baseline rules below (the edge rule supersedes them).
+        edge_over_flags = []
+        edge_under_flags = []
+        edge_max = cfg.openEdgeMaxManagers + cfg.openEdgeMaxCrew
+        for s in range(cfg.slotsPerDay):
+            slot_min = cfg.storeOpenMin + s * cfg.slotMinutes
+            if is_open_edge(slot_min) and (mgr_active[s] > cfg.openEdgeMaxManagers or crew_active[s] > cfg.openEdgeMaxCrew):
+                edge_over_flags.append(("BLOCKING", staff[s], edge_max))
+            else:
+                edge_over_flags.append(None)
+            if is_open_edge(slot_min) and crew_active[s] < cfg.openEdgeMaxCrew:
+                edge_under_flags.append(("WARNING", crew_active[s], cfg.openEdgeMaxCrew))
+            else:
+                edge_under_flags.append(None)
+        _emit_ranges(day, edge_over_flags, "OPEN_EDGE_OVER_CAP", lambda h, n: f"{h} working in the open/close hour (max {n}: one manager + one crew)", gaps, cfg)
+        _emit_ranges(day, edge_under_flags, "OPEN_EDGE_UNDERSTAFFED", lambda h, n: f"{h} crew in the open/close hour (want {n})", gaps, cfg)
+
         late_flags = []
         for s in range(cfg.slotsPerDay):
             slot_min = cfg.storeOpenMin + s * cfg.slotMinutes
             late = slot_min >= cfg.lateNightCutoffMin[day]
-            late_flags.append(("BLOCKING", staff[s], cfg.lateNightMaxStaff) if (late and staff[s] > cfg.lateNightMaxStaff) else None)
+            late_flags.append(("BLOCKING", staff[s], cfg.lateNightMaxStaff) if (late and not is_open_edge(slot_min) and staff[s] > cfg.lateNightMaxStaff) else None)
         _emit_ranges(day, late_flags, "LATE_NIGHT_OVER_CAP", lambda h, n: f"{h} staff after cutoff (max {n})", gaps, cfg)
 
         rush_flags = []
@@ -625,7 +689,7 @@ def compute_gaps(employees: list[Employee], assignments: list[Assignment], cfg: 
         for s in range(cfg.slotsPerDay):
             slot_min = cfg.storeOpenMin + s * cfg.slotMinutes
             late = slot_min >= cfg.lateNightCutoffMin[day]
-            if late:
+            if late or is_open_edge(slot_min):
                 rush_flags.append(None)
                 base_flags.append(None)
                 continue

@@ -56,6 +56,8 @@ export interface SolveRequest {
 export type GapKind =
   | "MANAGER_ABSENCE"
   | "LATE_NIGHT_OVER_CAP"
+  | "OPEN_EDGE_OVER_CAP"
+  | "OPEN_EDGE_UNDERSTAFFED"
   | "BASELINE_BELOW_FLOOR"
   | "BASELINE_BELOW_TARGET"
   | "RUSH_BELOW_TARGET"
