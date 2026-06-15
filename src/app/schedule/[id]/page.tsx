@@ -69,6 +69,22 @@ export default function SchedulePage({ params }: { params: { id: string } }) {
     await load();
   }
 
+  const updateShift = useCallback(
+    async (assignment: AssignmentRow, startMin: number, endMin: number) => {
+      setError(null);
+      await sendJSON(`/api/schedules/${params.id}/assignments`, "PUT", {
+        id: assignment.id,
+        employeeId: assignment.employeeId,
+        dayOfWeek: assignment.dayOfWeek,
+        startMin,
+        endMin,
+        locked: assignment.locked,
+      });
+      await load();
+    },
+    [load, params.id],
+  );
+
   async function deleteShift() {
     if (!editing?.assignment) return;
     await sendJSON(`/api/schedules/${params.id}/assignments?assignmentId=${editing.assignment.id}`, "DELETE");
@@ -168,7 +184,7 @@ export default function SchedulePage({ params }: { params: { id: string } }) {
 
       <Card className="p-4">
         {tab === "grid" && <GridEditor detail={detail} onCellClick={openEditor} />}
-        {tab === "timeline" && <TimelineView detail={detail} />}
+        {tab === "timeline" && <TimelineView detail={detail} onShiftChange={updateShift} />}
         {tab === "report" && <PrintableReport detail={detail} />}
         {tab === "gaps" && <GapReportView gaps={gapList} />}
       </Card>
