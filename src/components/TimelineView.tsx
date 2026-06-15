@@ -8,6 +8,9 @@ import {
   DAY_NAMES,
   LATE_NIGHT_CUTOFF_MIN,
   LATE_NIGHT_MIN_STAFF,
+  OPEN_EDGE_MAX_CREW,
+  OPEN_EDGE_MAX_MANAGERS,
+  OPEN_EDGE_WINDOW_MIN,
   REGULAR_SHIFT_MIN_MIN,
   RUSH_TARGET_STAFF,
   RUSH_WINDOWS,
@@ -22,6 +25,7 @@ import type { AssignmentRow, ScheduleDetail } from "@/lib/view-types";
 
 const TOTAL = STORE_CLOSE_MIN - STORE_OPEN_MIN;
 const pct = (min: number) => ((min - STORE_OPEN_MIN) / TOTAL) * 100;
+const EDGE_TARGET_STAFF = OPEN_EDGE_MAX_MANAGERS + OPEN_EDGE_MAX_CREW;
 
 type DragMode = "move" | "start" | "end";
 
@@ -39,12 +43,34 @@ interface DragState {
 
 function slotStatus(day: number, slotStartMin: number, count: number): "ok" | "warn" | "bad" {
   const slotEnd = slotStartMin + SLOT_MINUTES;
+  if (isOpenEdge(slotStartMin)) {
+    if (count === EDGE_TARGET_STAFF) return "ok";
+    return count > EDGE_TARGET_STAFF ? "bad" : "warn";
+  }
   if (slotStartMin >= LATE_NIGHT_CUTOFF_MIN[day]) return count >= LATE_NIGHT_MIN_STAFF ? "ok" : "warn";
   const inRush = RUSH_WINDOWS.some((w) => slotStartMin >= w.startMin && slotEnd <= w.endMin);
   if (inRush) return count >= RUSH_TARGET_STAFF ? "ok" : count >= BASELINE_FLOOR_STAFF ? "warn" : "bad";
   if (count >= BASELINE_TARGET_STAFF) return "ok";
   if (count >= BASELINE_FLOOR_STAFF) return "warn";
   return "bad";
+}
+
+function isOpenEdge(slotStartMin: number): boolean {
+  return slotStartMin < STORE_OPEN_MIN + OPEN_EDGE_WINDOW_MIN || slotStartMin >= STORE_CLOSE_MIN - OPEN_EDGE_WINDOW_MIN;
+}
+
+function SlotGrid({ className }: { className?: string }) {
+  return (
+    <div className={clsx("pointer-events-none absolute inset-0", className)}>
+      {Array.from({ length: SLOTS_PER_DAY + 1 }).map((_, i) => (
+        <span
+          key={i}
+          className={clsx("absolute inset-y-0 border-l", i % 4 === 0 ? "border-slate-300/80" : "border-slate-300/45")}
+          style={{ left: `${(i / SLOTS_PER_DAY) * 100}%` }}
+        />
+      ))}
+    </div>
+  );
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -232,6 +258,7 @@ export function TimelineView({
                     <div key={w.label} className="absolute inset-y-0 bg-brand-light/50" style={{ left: `${pct(w.startMin)}%`, width: `${pct(w.endMin) - pct(w.startMin)}%` }} />
                   ))}
                   <div className="absolute inset-y-0 bg-slate-200/40" style={{ left: `${pct(cutoff)}%`, width: `${100 - pct(cutoff)}%` }} />
+                  <SlotGrid className="z-0" />
                   {rowShifts.map((a) => {
                     const preview = drag?.assignmentId === a.id ? { startMin: drag.nextStart, endMin: drag.nextEnd } : null;
                     const startMin = preview?.startMin ?? a.startMin;
@@ -244,7 +271,7 @@ export function TimelineView({
                         key={a.id}
                         onPointerDown={(e) => beginDrag(e, a, "move")}
                         className={clsx(
-                          "absolute inset-y-1 touch-none select-none rounded text-[10px] text-white shadow-sm",
+                          "absolute inset-y-1 z-10 touch-none select-none rounded text-[10px] text-white shadow-sm",
                           onShiftChange && "cursor-grab active:cursor-grabbing",
                           a.locked ? "bg-brand-dark" : "bg-emerald-600",
                           preview && "ring-2 ring-slate-900/20",
@@ -295,6 +322,7 @@ export function TimelineView({
         <div className="mt-3 flex items-end">
           <div className="w-40 shrink-0 pr-2 text-xs font-medium text-slate-500">Coverage (staff)</div>
           <div className="relative flex h-16 flex-1 items-end">
+            <SlotGrid className="z-0" />
             {Array.from({ length: SLOTS_PER_DAY }).map((_, s) => {
               const slotStart = STORE_OPEN_MIN + s * SLOT_MINUTES;
               const count = staff[s];
@@ -303,7 +331,7 @@ export function TimelineView({
               return (
                 <div
                   key={s}
-                  className={clsx("flex-1", color, count === 0 && "bg-slate-100")}
+                  className={clsx("relative z-10 flex-1 border-l", s % 4 === 0 ? "border-slate-500/35" : "border-white/60", color, count === 0 && "bg-slate-100")}
                   style={{ height: `${Math.min(count, 6) * 16}%` }}
                   title={`${formatMinutesShort(slotStart)} - ${count} staff${managerPresent[s] ? "" : " - no manager"}`}
                 />
@@ -315,8 +343,13 @@ export function TimelineView({
         <div className="mt-1 flex items-center">
           <div className="w-40 shrink-0 pr-2 text-xs font-medium text-slate-500">Manager present</div>
           <div className="relative flex h-3 flex-1">
+            <SlotGrid className="z-0" />
             {Array.from({ length: SLOTS_PER_DAY }).map((_, s) => (
-              <div key={s} className={clsx("flex-1", managerPresent[s] > 0 ? "bg-brand" : staff[s] > 0 ? "bg-red-400" : "bg-slate-100")} title={managerPresent[s] > 0 ? "manager on site" : "no manager"} />
+              <div
+                key={s}
+                className={clsx("relative z-10 flex-1 border-l", s % 4 === 0 ? "border-slate-500/35" : "border-white/60", managerPresent[s] > 0 ? "bg-brand" : staff[s] > 0 ? "bg-red-400" : "bg-slate-100")}
+                title={managerPresent[s] > 0 ? "manager on site" : "no manager"}
+              />
             ))}
           </div>
         </div>
