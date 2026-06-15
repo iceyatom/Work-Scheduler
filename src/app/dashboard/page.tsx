@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Button, Card, Spinner, Badge, ErrorBanner } from "@/components/ui";
+import { Button, Card, Spinner, Badge, ErrorBanner, ConfirmDialog } from "@/components/ui";
 import { getJSON, sendJSON } from "@/lib/client";
 import { mondayOf, isoDate } from "@/lib/time";
 import type { ScheduleSummary } from "@/lib/view-types";
@@ -26,11 +26,29 @@ export default function DashboardPage() {
   const [name, setName] = useState("Weekly schedule");
   const [weekStart, setWeekStart] = useState(() => isoDate(mondayOf(new Date())));
 
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Ids queued for deletion — drives the confirmation modal. Works for both a
+  // single row (one id) and a batch (the current selection).
+  const [pendingDelete, setPendingDelete] = useState<string[] | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const selectAllRef = useRef<HTMLInputElement>(null);
+
+  const allSelected = schedules.length > 0 && selected.size === schedules.length;
+  const someSelected = selected.size > 0 && !allSelected;
+
+  // Native checkboxes can't express "indeterminate" via props — set it imperatively.
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = someSelected;
+  }, [someSelected]);
+
   async function load() {
     try {
       const [s, emps] = await Promise.all([getJSON<ScheduleSummary[]>("/api/schedules"), getJSON<unknown[]>("/api/employees")]);
       setSchedules(s);
       setEmpCount(emps.length);
+      // Drop any selected ids that no longer exist (e.g. after a delete).
+      const live = new Set(s.map((x) => x.id));
+      setSelected((prev) => new Set([...prev].filter((id) => live.has(id))));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -54,11 +72,43 @@ export default function DashboardPage() {
     }
   }
 
-  async function remove(id: string) {
-    if (!confirm("Delete this schedule?")) return;
-    await sendJSON(`/api/schedules/${id}`, "DELETE");
-    load();
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    const ids = pendingDelete;
+    setDeleting(true);
+    setError(null);
+    try {
+      // No bulk endpoint — fan out to the account-scoped per-id DELETE in parallel.
+      await Promise.all(ids.map((id) => sendJSON(`/api/schedules/${id}`, "DELETE")));
+      setSelected((prev) => {
+        const next = new Set(prev);
+        ids.forEach((id) => next.delete(id));
+        return next;
+      });
+      setPendingDelete(null);
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setDeleting(false);
+    }
   }
+
+  function toggleOne(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    setSelected((prev) => (prev.size === schedules.length ? new Set() : new Set(schedules.map((s) => s.id))));
+  }
+
+  // Name to show in the modal when deleting exactly one schedule.
+  const pendingName = pendingDelete?.length === 1 ? schedules.find((s) => s.id === pendingDelete[0])?.name : undefined;
 
   return (
     <div className="space-y-6">
@@ -105,8 +155,30 @@ export default function DashboardPage() {
       </Card>
 
       <Card>
-        <div className="border-b border-slate-100 px-5 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
           <h2 className="text-lg font-semibold text-slate-900">Your schedules</h2>
+          {schedules.length > 0 && (
+            <div className="flex items-center gap-4">
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+                <input
+                  ref={selectAllRef}
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-slate-300 accent-brand"
+                  checked={allSelected}
+                  onChange={toggleAll}
+                />
+                Select all
+              </label>
+              <Button
+                variant="danger"
+                onClick={() => setPendingDelete([...selected])}
+                disabled={selected.size === 0}
+                className="text-sm"
+              >
+                {`Delete${selected.size ? ` (${selected.size})` : ""}`}
+              </Button>
+            </div>
+          )}
         </div>
         {loading ? (
           <div className="flex items-center gap-2 px-5 py-8 text-slate-500">
@@ -119,8 +191,15 @@ export default function DashboardPage() {
             {schedules.map((s) => {
               const { blocking, warning } = gapCounts(s.gaps);
               return (
-                <li key={s.id} className="flex flex-col gap-2 px-5 py-3 hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between">
-                  <Link href={`/schedule/${s.id}`} className="flex-1">
+                <li key={s.id} className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 shrink-0 rounded border-slate-300 accent-brand"
+                    checked={selected.has(s.id)}
+                    onChange={() => toggleOne(s.id)}
+                    aria-label={`Select ${s.name}`}
+                  />
+                  <Link href={`/schedule/${s.id}`} className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-slate-900">{s.name}</span>
                       <Badge color={s.generatedFrom === "RESOLVE" ? "blue" : "purple"}>{s.generatedFrom === "RESOLVE" ? "Re-solved" : "Generated"}</Badge>
@@ -130,11 +209,11 @@ export default function DashboardPage() {
                       Week of {s.weekStart.slice(0, 10)} · {s._count?.assignments ?? 0} shifts · solved in {s.solveMs ?? "—"} ms
                     </div>
                   </Link>
-                  <div className="flex items-center gap-2">
+                  <div className="flex shrink-0 items-center gap-2">
                     {blocking > 0 && <Badge color="red">{blocking} blocking</Badge>}
                     {warning > 0 && <Badge color="amber">{warning} warnings</Badge>}
                     {blocking === 0 && warning === 0 && <Badge color="green">No gaps</Badge>}
-                    <Button variant="ghost" onClick={() => remove(s.id)} className="text-red-600 hover:bg-red-50">
+                    <Button variant="ghost" onClick={() => setPendingDelete([s.id])} className="text-red-600 hover:bg-red-50">
                       Delete
                     </Button>
                   </div>
@@ -144,6 +223,24 @@ export default function DashboardPage() {
           </ul>
         )}
       </Card>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        busy={deleting}
+        title={pendingDelete && pendingDelete.length > 1 ? `Delete ${pendingDelete.length} schedules?` : "Delete schedule?"}
+        message={
+          pendingName ? (
+            <>
+              This permanently removes <span className="font-medium text-slate-700">“{pendingName}”</span> and all of its shifts. This can&rsquo;t be undone.
+            </>
+          ) : (
+            <>This permanently removes the selected schedules and all of their shifts. This can&rsquo;t be undone.</>
+          )
+        }
+        confirmLabel={deleting ? "Deleting…" : pendingDelete && pendingDelete.length > 1 ? `Delete ${pendingDelete.length}` : "Delete"}
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 }

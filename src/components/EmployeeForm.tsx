@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { Button, Spinner } from "@/components/ui";
 import { DAY_NAMES } from "@/lib/constants";
-import { toHHMM, parseStoreTime } from "@/lib/time";
+import { toHHMM, parseStoreTime, hoursFromMin } from "@/lib/time";
+import { deriveShift } from "@/lib/validation";
 import { validateEmployee } from "@/lib/employee-validation";
 import { sendJSON } from "@/lib/client";
 
@@ -138,12 +139,14 @@ export function EmployeeForm({ initial, onClose, onSaved }: { initial: EmployeeD
             items={d.availability}
             onAdd={() => set({ availability: [...d.availability, { dayOfWeek: 0, startMin: 9 * 60, endMin: 17 * 60 }] })}
             onRemove={(i) => set({ availability: d.availability.filter((_, idx) => idx !== i) })}
+            onDuplicate={(i) => set({ availability: insertCopy(d.availability, i) })}
             render={(w, i) => (
               <>
                 <DaySelect value={w.dayOfWeek} onChange={(v) => updateAt(d.availability, i, { dayOfWeek: v }, (next) => set({ availability: next }))} />
                 <TimeField value={w.startMin} onChange={(v) => updateAt(d.availability, i, { startMin: v }, (next) => set({ availability: next }))} />
                 <span className="text-slate-400">to</span>
                 <TimeField value={w.endMin} onChange={(v) => updateAt(d.availability, i, { endMin: v }, (next) => set({ availability: next }))} />
+                <ShiftTotals startMin={w.startMin} endMin={w.endMin} />
               </>
             )}
           />
@@ -154,12 +157,14 @@ export function EmployeeForm({ initial, onClose, onSaved }: { initial: EmployeeD
             items={d.hardSets}
             onAdd={() => set({ hardSets: [...d.hardSets, { dayOfWeek: 0, startMin: 6 * 60, endMin: 16 * 60 + 30 }] })}
             onRemove={(i) => set({ hardSets: d.hardSets.filter((_, idx) => idx !== i) })}
+            onDuplicate={(i) => set({ hardSets: insertCopy(d.hardSets, i) })}
             render={(h, i) => (
               <>
                 <DaySelect value={h.dayOfWeek} onChange={(v) => updateAt(d.hardSets, i, { dayOfWeek: v }, (next) => set({ hardSets: next }))} />
                 <TimeField value={h.startMin} onChange={(v) => updateAt(d.hardSets, i, { startMin: v }, (next) => set({ hardSets: next }))} />
                 <span className="text-slate-400">to</span>
                 <TimeField value={h.endMin} onChange={(v) => updateAt(d.hardSets, i, { endMin: v }, (next) => set({ hardSets: next }))} />
+                <ShiftTotals startMin={h.startMin} endMin={h.endMin} />
               </>
             )}
           />
@@ -187,8 +192,32 @@ export function EmployeeForm({ initial, onClose, onSaved }: { initial: EmployeeD
   );
 }
 
+// Per-line totals: time at the store (length, incl. unpaid breaks) and paid
+// time (length minus the derived unpaid 30-min lunches). Mirrors the grid's
+// "duration vs paid" distinction (see deriveShift / breaks rules).
+function ShiftTotals({ startMin, endMin }: { startMin: number; endMin: number }) {
+  if (endMin <= startMin) {
+    return <span className="ml-auto whitespace-nowrap text-xs text-red-500">invalid range</span>;
+  }
+  const length = endMin - startMin;
+  const { paidMinutes } = deriveShift(startMin, endMin);
+  return (
+    <span className="ml-auto whitespace-nowrap text-xs tabular-nums text-slate-500">
+      <span title="Total time at the store (incl. unpaid breaks)">{hoursFromMin(length)}h total</span>
+      <span className="mx-1 text-slate-300">·</span>
+      <span title="Paid time (length minus unpaid 30-min breaks)">{hoursFromMin(paidMinutes)}h paid</span>
+    </span>
+  );
+}
+
 function updateAt<T>(arr: T[], i: number, patch: Partial<T>, commit: (next: T[]) => void) {
   commit(arr.map((item, idx) => (idx === i ? { ...item, ...patch } : item)));
+}
+
+// Duplicate the entry at index i, inserting the copy directly after it so the
+// new (identical) row sits adjacent and ready to re-day.
+function insertCopy<T>(arr: T[], i: number): T[] {
+  return [...arr.slice(0, i + 1), { ...arr[i] }, ...arr.slice(i + 1)];
 }
 
 function DaySelect({ value, onChange }: { value: number; onChange: (v: number) => void }) {
@@ -203,7 +232,21 @@ function DaySelect({ value, onChange }: { value: number; onChange: (v: number) =
   );
 }
 
-function ListEditor<T>({ title, items, onAdd, onRemove, render }: { title: string; items: T[]; onAdd: () => void; onRemove: (i: number) => void; render: (item: T, i: number) => React.ReactNode }) {
+function ListEditor<T>({
+  title,
+  items,
+  onAdd,
+  onRemove,
+  onDuplicate,
+  render,
+}: {
+  title: string;
+  items: T[];
+  onAdd: () => void;
+  onRemove: (i: number) => void;
+  onDuplicate: (i: number) => void;
+  render: (item: T, i: number) => React.ReactNode;
+}) {
   return (
     <div>
       <div className="mb-1 flex items-center justify-between">
@@ -219,7 +262,10 @@ function ListEditor<T>({ title, items, onAdd, onRemove, render }: { title: strin
           {items.map((item, i) => (
             <div key={i} className="flex flex-wrap items-center gap-2 rounded-md bg-slate-50 px-2 py-1.5">
               {render(item, i)}
-              <button onClick={() => onRemove(i)} className="ml-auto text-slate-400 hover:text-red-600" title="Remove">
+              <button onClick={() => onDuplicate(i)} className="text-slate-400 hover:text-brand" title="Duplicate (copy then change the day)">
+                ⧉
+              </button>
+              <button onClick={() => onRemove(i)} className="text-slate-400 hover:text-red-600" title="Remove">
                 ✕
               </button>
             </div>
