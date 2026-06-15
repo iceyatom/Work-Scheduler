@@ -13,7 +13,6 @@
 
 import {
   BASELINE_FLOOR_STAFF,
-  BASELINE_TARGET_STAFF,
   DAILY_LABOR_HARD_CAP_MIN,
   DAILY_LABOR_MIN_MIN,
   DAILY_LABOR_SOFT_CAP_MIN,
@@ -327,19 +326,20 @@ export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[])
     });
     emitRanges(day, rushFlags, "RUSH_BELOW_TARGET", (h, n) => `rush staffed ${h} (target ${n})`, gaps);
 
-    // Baseline coverage (spec §3.2) – floor 3 (blocking), target 4 (warning).
+    // Baseline coverage (spec §3.2): report only the floor. The 4-staff target
+    // remains a solver preference, but lunch breaks commonly dip to 3 and should
+    // not create warning noise.
     const baseFlags = staff.map((c, i) => {
       const slotStart = STORE_OPEN_MIN + i * SLOT_MINUTES;
       if (inRush(slotStart) || isLateNight(day, slotStart) || isOpenEdge(slotStart)) return null;
       if (c < BASELINE_FLOOR_STAFF) return { severity: "BLOCKING" as const, have: c, need: BASELINE_FLOOR_STAFF };
-      if (c < BASELINE_TARGET_STAFF) return { severity: "WARNING" as const, have: c, need: BASELINE_TARGET_STAFF };
       return null;
     });
     emitRanges(
       day,
       baseFlags,
-      "BASELINE_BELOW_TARGET",
-      (h, n) => (n === BASELINE_FLOOR_STAFF ? `below the ${n}-staff hard floor (have ${h})` : `below the ${n}-staff baseline (have ${h})`),
+      "BASELINE_BELOW_FLOOR",
+      (h, n) => `below the ${n}-staff hard floor (have ${h})`,
       gaps,
     );
 

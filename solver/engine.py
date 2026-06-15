@@ -697,16 +697,14 @@ def compute_gaps(employees: list[Employee], assignments: list[Assignment], cfg: 
                 rush_flags.append(None)
                 if staff[s] < cfg.baselineFloorStaff:
                     base_flags.append(("BLOCKING", staff[s], cfg.baselineFloorStaff))
-                elif staff[s] < cfg.baselineTargetStaff:
-                    base_flags.append(("WARNING", staff[s], cfg.baselineTargetStaff))
                 else:
                     base_flags.append(None)
         _emit_ranges(day, rush_flags, "RUSH_BELOW_TARGET", lambda h, n: f"rush staffed {h} (target {n})", gaps, cfg)
         _emit_ranges(
             day,
             base_flags,
-            "BASELINE_BELOW_TARGET",
-            lambda h, n: (f"below the {n}-staff hard floor (have {h})" if n == cfg.baselineFloorStaff else f"below the {n}-staff baseline (have {h})"),
+            "BASELINE_BELOW_FLOOR",
+            lambda h, n: f"below the {n}-staff hard floor (have {h})",
             gaps,
             cfg,
         )
