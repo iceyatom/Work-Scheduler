@@ -7,7 +7,7 @@ import {
   BASELINE_TARGET_STAFF,
   DAY_NAMES,
   LATE_NIGHT_CUTOFF_MIN,
-  LATE_NIGHT_MAX_STAFF,
+  LATE_NIGHT_MIN_STAFF,
   RUSH_TARGET_STAFF,
   RUSH_WINDOWS,
   SLOTS_PER_DAY,
@@ -24,7 +24,7 @@ const pct = (min: number) => ((min - STORE_OPEN_MIN) / TOTAL) * 100;
 
 function slotStatus(day: number, slotStartMin: number, count: number): "ok" | "warn" | "bad" {
   const slotEnd = slotStartMin + SLOT_MINUTES;
-  if (slotStartMin >= LATE_NIGHT_CUTOFF_MIN[day]) return count > LATE_NIGHT_MAX_STAFF ? "bad" : "ok";
+  if (slotStartMin >= LATE_NIGHT_CUTOFF_MIN[day]) return count >= LATE_NIGHT_MIN_STAFF ? "ok" : "warn";
   const inRush = RUSH_WINDOWS.some((w) => slotStartMin >= w.startMin && slotEnd <= w.endMin);
   if (inRush) return count >= RUSH_TARGET_STAFF ? "ok" : count >= BASELINE_FLOOR_STAFF ? "warn" : "bad";
   if (count >= BASELINE_TARGET_STAFF) return "ok";
@@ -159,10 +159,10 @@ export function TimelineView({ detail }: { detail: ScheduleDetail }) {
 
       <div className="mt-4 flex flex-wrap gap-4 text-xs text-slate-500">
         <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-brand-light" /> Rush window (target {RUSH_TARGET_STAFF})</span>
-        <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-slate-200" /> Late-night (≤{LATE_NIGHT_MAX_STAFF} after {formatMinutesShort(cutoff)})</span>
+        <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-slate-200" /> Late-night ({LATE_NIGHT_MIN_STAFF}+ after {formatMinutesShort(cutoff)})</span>
         <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-emerald-500" /> meets target</span>
         <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-amber-400" /> below target</span>
-        <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-red-500" /> below floor / over cap</span>
+        <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-red-500" /> below floor / edge over cap</span>
       </div>
     </div>
   );

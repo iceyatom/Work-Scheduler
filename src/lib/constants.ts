@@ -36,8 +36,9 @@ export const DAYS_PER_WEEK = 7;
 // --- Manager presence (spec §2) -------------------------------------------
 export const MANAGER_MIN_ON_SITE = 1;
 
-// --- Late-night reduced coverage, HARD CAP (spec §3.3) --------------------
-// Max staff scheduled AFTER each day's cutoff (minutes from midnight).
+// --- Late-night reduced coverage, SOFT target ------------------------------
+// Target active staff scheduled after each day's cutoff. The final close hour is
+// governed by the open/close-edge rule below: exactly one manager + one crew.
 export const LATE_NIGHT_CUTOFF_MIN: number[] = [
   22 * 60, // Monday    10:00 PM
   23 * 60, // Tuesday   11:00 PM
@@ -47,7 +48,7 @@ export const LATE_NIGHT_CUTOFF_MIN: number[] = [
   23 * 60 + 30, // Saturday  11:30 PM
   23 * 60 + 30, // Sunday    11:30 PM
 ];
-export const LATE_NIGHT_MAX_STAFF = 2;
+export const LATE_NIGHT_MIN_STAFF = 2;
 
 // --- Rush coverage, SOFT (spec §3.1) --------------------------------------
 export const RUSH_TARGET_STAFF = 5;
@@ -63,8 +64,8 @@ export const BASELINE_TARGET_STAFF = 4; // preferred
 // --- Open/close edge hours -------------------------------------------------
 // Keep the first hour the store is open and the last hour before close lean:
 // exactly one manager and one regular (crew) employee. The caps are HARD upper
-// bounds (like the late-night cap); the "one each" target is soft. Outside
-// these two windows, baseline/rush coverage applies normally.
+// bounds; the "one each" target is soft. Outside these two windows,
+// baseline/rush/late-night coverage applies normally.
 export const OPEN_EDGE_WINDOW_MIN = 60; // first hour [open, open+60) & last hour [close-60, close)
 export const OPEN_EDGE_MAX_MANAGERS = 1;
 export const OPEN_EDGE_MAX_CREW = 1;
@@ -118,7 +119,7 @@ export function storeConfig() {
     daysPerWeek: DAYS_PER_WEEK,
     managerMinOnSite: MANAGER_MIN_ON_SITE,
     lateNightCutoffMin: LATE_NIGHT_CUTOFF_MIN,
-    lateNightMaxStaff: LATE_NIGHT_MAX_STAFF,
+    lateNightMinStaff: LATE_NIGHT_MIN_STAFF,
     rushTargetStaff: RUSH_TARGET_STAFF,
     rushWindows: RUSH_WINDOWS,
     baselineFloorStaff: BASELINE_FLOOR_STAFF,

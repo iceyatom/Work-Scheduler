@@ -126,9 +126,11 @@ src/components/          # GridEditor, TimelineView, PrintableReport, SliderEdit
   The CP-SAT time budget is split (~35% phase 1, rest phase 2).
 - **Soft-over-hard philosophy**: coverage/manager/labor-min are weighted penalties
   so the solver always returns its best feasible schedule + a gap report. True
-  hard constraints: late-night cap (≤2 after cutoff), 80h/day hard cap, weekly
-  max-hours, ≥2 days off/week (≤5 working days), structural rules, hard-sets.
-  *All HARD caps that include the fixed base (late-night, daily-hard-cap, weekly-max,
+  hard constraints: 80h/day hard cap, weekly max-hours, ≥2 days off/week (≤5
+  working days), structural rules, hard-sets, and open/close-edge caps.
+  The late-night period is now a soft target: 2+ active staff after each day's
+  cutoff, except the final close hour.
+  *All HARD caps that include the fixed base (daily-hard-cap, weekly-max,
   open/close-edge) are **decision-capped** — they bound only the selectable shifts
   against the room left by hard-sets, so an over-the-cap hard-set degrades to a
   reported gap instead of making the whole phase INFEASIBLE and dropping every crew.*

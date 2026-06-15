@@ -21,7 +21,7 @@ import {
   DAYS_PER_WEEK,
   GM_SHIFT_MAX_MIN,
   LATE_NIGHT_CUTOFF_MIN,
-  LATE_NIGHT_MAX_STAFF,
+  LATE_NIGHT_MIN_STAFF,
   LUNCH_BREAK_MIN,
   LUNCH_BREAK_THRESHOLD_MIN,
   MANAGER_MIN_ON_SITE,
@@ -300,23 +300,23 @@ export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[])
         : null;
     });
     emitRanges(day, edgeOverFlags, "OPEN_EDGE_OVER_CAP", (h, n) => `${h} working in the open/close hour (max ${n}: one manager + one crew)`, gaps);
-    const edgeUnderFlags = crewActive.map((cw, i) => {
+    const edgeUnderFlags = staff.map((c, i) => {
       const slotStart = STORE_OPEN_MIN + i * SLOT_MINUTES;
-      return isOpenEdge(slotStart) && cw < OPEN_EDGE_MAX_CREW
-        ? ({ severity: "WARNING" as const, have: cw, need: OPEN_EDGE_MAX_CREW })
+      return isOpenEdge(slotStart) && (managerActive[i] < OPEN_EDGE_MAX_MANAGERS || crewActive[i] < OPEN_EDGE_MAX_CREW)
+        ? ({ severity: "WARNING" as const, have: c, need: edgeMax })
         : null;
     });
-    emitRanges(day, edgeUnderFlags, "OPEN_EDGE_UNDERSTAFFED", (h, n) => `${h} crew in the open/close hour (want ${n})`, gaps);
+    emitRanges(day, edgeUnderFlags, "OPEN_EDGE_UNDERSTAFFED", (h, n) => `${h} working in the open/close hour (want ${n}: one manager + one crew)`, gaps);
 
-    // Late-night cap (spec §3.3) – blocking when more than 2 staff after cutoff
-    // (the open/close-edge rule takes over for the last hour).
+    // Late-night minimum target. The final close hour is handled by the
+    // open/close-edge rule above.
     const lateFlags = staff.map((c, i) => {
       const slotStart = STORE_OPEN_MIN + i * SLOT_MINUTES;
-      return isLateNight(day, slotStart) && !isOpenEdge(slotStart) && c > LATE_NIGHT_MAX_STAFF
-        ? ({ severity: "BLOCKING" as const, have: c, need: LATE_NIGHT_MAX_STAFF })
+      return isLateNight(day, slotStart) && !isOpenEdge(slotStart) && c < LATE_NIGHT_MIN_STAFF
+        ? ({ severity: "WARNING" as const, have: c, need: LATE_NIGHT_MIN_STAFF })
         : null;
     });
-    emitRanges(day, lateFlags, "LATE_NIGHT_OVER_CAP", (h, n) => `${h} staff after late-night cutoff (max ${n})`, gaps);
+    emitRanges(day, lateFlags, "LATE_NIGHT_BELOW_TARGET", (h, n) => `late-night staffed ${h} (target at least ${n})`, gaps);
 
     // Rush coverage (spec §3.1).
     const rushFlags = staff.map((c, i) => {
