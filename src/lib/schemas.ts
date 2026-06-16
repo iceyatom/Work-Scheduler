@@ -44,6 +44,23 @@ export const assignmentUpsert = z.object({
   locked: z.boolean().optional(),
 });
 
+// Whole-draft save from the grid / timeline editors. The client buffers all
+// manual edits locally and sends the complete assignment set at once; the route
+// reconciles it against the persisted rows in a single transaction.
+export const assignmentBulk = z.object({
+  assignments: z.array(
+    z.object({
+      id: z.string().optional(),
+      employeeId: z.string(),
+      dayOfWeek: z.number().int().min(0).max(6),
+      startMin: z.number().int().min(0).max(1470),
+      endMin: z.number().int().min(0).max(1470),
+      locked: z.boolean().optional(),
+      source: z.enum(["SOLVER", "MANUAL", "HARDSET"]).optional(),
+    }),
+  ),
+});
+
 export const changeInput = z.object({
   employeeId: z.string(),
   type: z.enum(["DAY_OFF", "TERMINATION", "SUSPENSION", "LEAVE_OF_ABSENCE", "AVAILABILITY_CHANGE"]),
