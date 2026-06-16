@@ -68,7 +68,8 @@ export type GapKind =
   | "MINOR_RULE"
   | "SHIFT_RULE"
   | "AVAILABILITY"
-  | "DAYS_OFF";
+  | "DAYS_OFF"
+  | "REST_PERIOD";
 
 export type GapSeverity = "BLOCKING" | "WARNING";
 

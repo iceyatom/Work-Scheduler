@@ -19,6 +19,7 @@ const KIND_LABEL: Record<string, string> = {
   SHIFT_RULE: "Shift rule",
   AVAILABILITY: "Availability",
   DAYS_OFF: "Days off",
+  REST_PERIOD: "Rest period",
 };
 
 // Gap report: unmet soft constraints surfaced for manual resolution (spec §7.6).

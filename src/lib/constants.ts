@@ -81,6 +81,7 @@ export const REGULAR_SHIFT_MAX_MIN = 8 * 60 + 30; // 510 (8.5h)
 export const GM_SHIFT_MAX_MIN = 10 * 60 + 30; // 630 (10.5h)
 export const LUNCH_BREAK_THRESHOLD_MIN = 5 * 60; // one break per completed 5h (>=5h)
 export const LUNCH_BREAK_MIN = 30; // 30-min unpaid break
+export const MIN_REST_BETWEEN_SHIFTS_MIN = 8 * 60; // 8h between one shift ending and the next starting
 
 // --- Minor school-night limits (spec §4) ----------------------------------
 export const MINOR_MAX_SHIFT_MIN = 4 * 60; // 240 (<= 4h)
@@ -135,6 +136,7 @@ export function storeConfig() {
     gmShiftMaxMin: GM_SHIFT_MAX_MIN,
     lunchBreakThresholdMin: LUNCH_BREAK_THRESHOLD_MIN,
     lunchBreakMin: LUNCH_BREAK_MIN,
+    minRestBetweenShiftsMin: MIN_REST_BETWEEN_SHIFTS_MIN,
     minorMaxShiftMin: MINOR_MAX_SHIFT_MIN,
     minorLatestEndMin: MINOR_LATEST_END_MIN,
     schoolNights: SCHOOL_NIGHTS,

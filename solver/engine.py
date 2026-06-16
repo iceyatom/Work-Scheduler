@@ -246,6 +246,65 @@ def _assignment_to_fixed(a: Assignment, cfg: StoreConfig, is_manager: bool) -> F
     )
 
 
+def _abs_start(day: int, start: int) -> int:
+    return day * 1440 + start
+
+
+def _abs_end(day: int, end: int) -> int:
+    # end may be > 1440 for shifts that close after midnight.
+    return day * 1440 + end
+
+
+def _add_rest_constraints(model, x, candidates: list[Candidate], fixed: list[FixedShift], cfg: StoreConfig) -> None:
+    """HARD: no employee can start a shift less than the configured rest period
+    after their prior shift ends. Fixed-vs-fixed violations are reported as
+    gaps, not made infeasible, because hard-set shifts are constants."""
+    cand_by_emp_day: dict[tuple[str, int], list[int]] = {}
+    fixed_by_emp_day: dict[tuple[str, int], list[FixedShift]] = {}
+    for i, c in enumerate(candidates):
+        cand_by_emp_day.setdefault((c.emp_id, c.day), []).append(i)
+    for f in fixed:
+        fixed_by_emp_day.setdefault((f.emp_id, f.day), []).append(f)
+
+    var_day: dict[tuple[str, int], dict[str, object]] = {}
+    for (emp_id, day), idxs in cand_by_emp_day.items():
+        worked = model.NewBoolVar(f"worked_{emp_id}_{day}")
+        model.Add(worked == sum(x[i] for i in idxs))
+        start_expr = sum(candidates[i].start * x[i] for i in idxs)
+        end_expr = sum(candidates[i].end * x[i] for i in idxs)
+        var_day[(emp_id, day)] = {"worked": worked, "start": start_expr, "end": end_expr}
+
+    emp_ids = {c.emp_id for c in candidates} | {f.emp_id for f in fixed}
+    for emp_id in emp_ids:
+        # No wrap from Sunday to Monday: the next week's Monday is outside this
+        # schedule request and cannot be known here.
+        for day in range(cfg.daysPerWeek - 1):
+            cur_var = var_day.get((emp_id, day))
+            next_var = var_day.get((emp_id, day + 1))
+            cur_fixed = fixed_by_emp_day.get((emp_id, day), [])
+            next_fixed = fixed_by_emp_day.get((emp_id, day + 1), [])
+
+            if cur_var is not None and next_var is not None:
+                model.Add(
+                    _abs_start(day + 1, 0) + next_var["start"] - (_abs_end(day, 0) + cur_var["end"])
+                    >= cfg.minRestBetweenShiftsMin
+                ).OnlyEnforceIf([cur_var["worked"], next_var["worked"]])
+
+            if next_var is not None:
+                for prev in cur_fixed:
+                    model.Add(
+                        _abs_start(day + 1, 0) + next_var["start"] - _abs_end(prev.day, prev.end)
+                        >= cfg.minRestBetweenShiftsMin
+                    ).OnlyEnforceIf(next_var["worked"])
+
+            if cur_var is not None:
+                for nxt in next_fixed:
+                    model.Add(
+                        _abs_start(nxt.day, nxt.start) - (_abs_end(day, 0) + cur_var["end"])
+                        >= cfg.minRestBetweenShiftsMin
+                    ).OnlyEnforceIf(cur_var["worked"])
+
+
 def _solve_phase(
     cfg: StoreConfig,
     decision_employees: list[Employee],
@@ -268,6 +327,8 @@ def _solve_phase(
         groups.setdefault((c.emp_id, c.day), []).append(i)
     for idxs in groups.values():
         model.Add(sum(x[i] for i in idxs) <= 1)
+
+    _add_rest_constraints(model, x, candidates, fixed, cfg)
 
     ub = max(1, len({c.emp_id for c in candidates}) + len({f.emp_id for f in fixed}))
 
@@ -745,6 +806,49 @@ def compute_gaps(employees: list[Employee], assignments: list[Assignment], cfg: 
                     endMin=None,
                     message=f"{name}: scheduled {len(days)} days — needs at least {cfg.minDaysOffPerWeek} days off (max {max_working_days} working days).",
                     detail={"employeeId": emp_id, "daysWorked": len(days), "max": max_working_days},
+                )
+            )
+
+    # Minimum rest between adjacent shifts. The solver enforces this for
+    # selectable shifts; this catches manual edits and fixed-vs-fixed hard-sets.
+    shifts_by_emp: dict[str, list[Assignment]] = {}
+    for a in assignments:
+        shifts_by_emp.setdefault(a.employeeId, []).append(a)
+    for emp_id, shifts in shifts_by_emp.items():
+        shifts.sort(key=lambda sh: (_abs_start(sh.dayOfWeek, sh.startMin), _abs_end(sh.dayOfWeek, sh.endMin)))
+        for prev, curr in zip(shifts, shifts[1:]):
+            rest = _abs_start(curr.dayOfWeek, curr.startMin) - _abs_end(prev.dayOfWeek, prev.endMin)
+            if rest >= cfg.minRestBetweenShiftsMin:
+                continue
+            emp = emp_by_id.get(emp_id)
+            name = emp.name if emp else emp_id
+            if rest < 0:
+                message = (
+                    f"{name}: shifts overlap from {DAY_NAMES[prev.dayOfWeek]} {_fmt(prev.startMin)}-{_fmt(prev.endMin)} "
+                    f"to {DAY_NAMES[curr.dayOfWeek]} {_fmt(curr.startMin)}-{_fmt(curr.endMin)}; "
+                    f"minimum rest is {cfg.minRestBetweenShiftsMin/60:.0f}h."
+                )
+            else:
+                message = (
+                    f"{name}: only {rest/60:.1f}h between {DAY_NAMES[prev.dayOfWeek]} shift ending {_fmt(prev.endMin)} "
+                    f"and {DAY_NAMES[curr.dayOfWeek]} shift starting {_fmt(curr.startMin)}; "
+                    f"minimum is {cfg.minRestBetweenShiftsMin/60:.0f}h."
+                )
+            gaps.append(
+                GapItem(
+                    kind="REST_PERIOD",
+                    severity="BLOCKING",
+                    dayOfWeek=curr.dayOfWeek,
+                    startMin=curr.startMin,
+                    endMin=curr.endMin,
+                    message=message,
+                    detail={
+                        "employeeId": emp_id,
+                        "previousDayOfWeek": prev.dayOfWeek,
+                        "previousEndMin": prev.endMin,
+                        "restMinutes": rest,
+                        "need": cfg.minRestBetweenShiftsMin,
+                    },
                 )
             )
     return gaps

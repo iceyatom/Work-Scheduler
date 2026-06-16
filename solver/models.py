@@ -38,6 +38,7 @@ class StoreConfig(BaseModel):
     gmShiftMaxMin: int
     lunchBreakThresholdMin: int
     lunchBreakMin: int
+    minRestBetweenShiftsMin: int
     minorMaxShiftMin: int
     minorLatestEndMin: int
     schoolNights: list[int]

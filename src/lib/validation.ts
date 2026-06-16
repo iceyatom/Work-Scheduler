@@ -25,6 +25,7 @@ import {
   LUNCH_BREAK_THRESHOLD_MIN,
   MANAGER_MIN_ON_SITE,
   MIN_DAYS_OFF_PER_WEEK,
+  MIN_REST_BETWEEN_SHIFTS_MIN,
   MINOR_LATEST_END_MIN,
   MINOR_MAX_SHIFT_MIN,
   OPEN_EDGE_MAX_CREW,
@@ -234,6 +235,14 @@ function isOpenEdge(slotStartMin: number): boolean {
   return slotStartMin < STORE_OPEN_MIN + OPEN_EDGE_WINDOW_MIN || slotStartMin >= STORE_CLOSE_MIN - OPEN_EDGE_WINDOW_MIN;
 }
 
+function absoluteStart(dayOfWeek: number, startMin: number): number {
+  return dayOfWeek * 1440 + startMin;
+}
+
+function absoluteEnd(dayOfWeek: number, endMin: number): number {
+  return dayOfWeek * 1440 + endMin;
+}
+
 // Merge consecutive slots that share a gap into a single ranged GapItem.
 function emitRanges(
   dayOfWeek: number,
@@ -389,6 +398,46 @@ export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[])
         endMin: null,
         message: `${emp?.name ?? employeeId}: scheduled ${days.size} days — needs at least ${MIN_DAYS_OFF_PER_WEEK} days off (max ${maxWorkingDays} working days).`,
         detail: { employeeId, daysWorked: days.size, max: maxWorkingDays },
+      });
+    }
+  }
+
+  // Minimum rest between adjacent shifts. The solver enforces this for
+  // selectable shifts; this catches manual edits and fixed-vs-fixed hard-sets.
+  const shiftsByEmp = new Map<string, ShiftLite[]>();
+  for (const sh of shifts) {
+    if (!shiftsByEmp.has(sh.employeeId)) shiftsByEmp.set(sh.employeeId, []);
+    shiftsByEmp.get(sh.employeeId)!.push(sh);
+  }
+  for (const [employeeId, empShifts] of shiftsByEmp) {
+    const emp = empById.get(employeeId);
+    empShifts.sort((a, b) => {
+      const byStart = absoluteStart(a.dayOfWeek, a.startMin) - absoluteStart(b.dayOfWeek, b.startMin);
+      return byStart || absoluteEnd(a.dayOfWeek, a.endMin) - absoluteEnd(b.dayOfWeek, b.endMin);
+    });
+    for (let i = 1; i < empShifts.length; i++) {
+      const prev = empShifts[i - 1];
+      const curr = empShifts[i];
+      const rest = absoluteStart(curr.dayOfWeek, curr.startMin) - absoluteEnd(prev.dayOfWeek, prev.endMin);
+      if (rest >= MIN_REST_BETWEEN_SHIFTS_MIN) continue;
+      const message =
+        rest < 0
+          ? `${emp?.name ?? employeeId}: shifts overlap from ${DAY_NAMES[prev.dayOfWeek]} ${formatMinutesShort(prev.startMin)}-${formatMinutesShort(prev.endMin)} to ${DAY_NAMES[curr.dayOfWeek]} ${formatMinutesShort(curr.startMin)}-${formatMinutesShort(curr.endMin)}; minimum rest is ${MIN_REST_BETWEEN_SHIFTS_MIN / 60}h.`
+          : `${emp?.name ?? employeeId}: only ${(rest / 60).toFixed(1)}h between ${DAY_NAMES[prev.dayOfWeek]} shift ending ${formatMinutesShort(prev.endMin)} and ${DAY_NAMES[curr.dayOfWeek]} shift starting ${formatMinutesShort(curr.startMin)}; minimum is ${MIN_REST_BETWEEN_SHIFTS_MIN / 60}h.`;
+      gaps.push({
+        kind: "REST_PERIOD",
+        severity: "BLOCKING",
+        dayOfWeek: curr.dayOfWeek,
+        startMin: curr.startMin,
+        endMin: curr.endMin,
+        message,
+        detail: {
+          employeeId,
+          previousDayOfWeek: prev.dayOfWeek,
+          previousEndMin: prev.endMin,
+          restMinutes: rest,
+          need: MIN_REST_BETWEEN_SHIFTS_MIN,
+        },
       });
     }
   }
