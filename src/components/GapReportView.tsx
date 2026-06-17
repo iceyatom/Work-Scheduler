@@ -5,6 +5,7 @@ import type { GapItem } from "@/lib/types";
 
 const KIND_LABEL: Record<string, string> = {
   MANAGER_ABSENCE: "Manager",
+  LATE_NIGHT_BELOW_TARGET: "Late-night",
   LATE_NIGHT_OVER_CAP: "Late-night cap",
   OPEN_EDGE_OVER_CAP: "Open/close hour",
   OPEN_EDGE_UNDERSTAFFED: "Open/close hour",
@@ -18,6 +19,7 @@ const KIND_LABEL: Record<string, string> = {
   SHIFT_RULE: "Shift rule",
   AVAILABILITY: "Availability",
   DAYS_OFF: "Days off",
+  REST_PERIOD: "Rest period",
 };
 
 // Gap report: unmet soft constraints surfaced for manual resolution (spec §7.6).

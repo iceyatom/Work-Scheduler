@@ -153,15 +153,18 @@ so managers are placed first:
 4. **Phase 2 — crew around the managers.** The phase-1 manager shifts become
    fixed coverage, and the rest of the crew is scheduled to meet baseline/rush
    coverage and labor targets on top of them.
-5. **Hard constraints** (both phases): per-day late-night cap (≤2 after cutoff),
-   80h/day labor hard cap, weekly max-hours, **≥2 days off per week** (≤5 working
-   days per employee), and the structural rules baked into candidate generation.
-   Hard-set shifts (e.g. a GM standing shift) are fixed constants.
+5. **Hard constraints** (both phases): 80h/day labor hard cap, weekly max-hours,
+   **≥2 days off per week** (≤5 working
+   days per employee), **8h minimum rest between adjacent shifts**, and the
+   structural rules baked into candidate generation. Hard-set shifts (e.g. a GM
+   standing shift) are fixed constants.
 6. **Soft constraints** (weighted penalties, always feasible): manager presence
-   (phase 1); baseline floor (3) / target (4), rush target (5), 70h/day minimum,
+   (phase 1); baseline floor (3) / target (4), rush target (5), late-night target
+   (2+ after each day's cutoff, except the final close hour), 70h/day minimum,
    75h/day soft cap (phase 2); weekly minimums (stronger for managers) and
-   priority weighting (FT over PT, and performance) in both. In **RESOLVE** mode
-   an extra stability term keeps existing shifts unchanged.
+   priority weighting (FT over PT, and performance) in both. The final close hour
+   stays lean at exactly one manager + one crew. In **RESOLVE** mode an extra
+   stability term keeps existing shifts unchanged.
 7. The combined result is mapped to assignments, and a **gap report** is computed.
 
 The CP-SAT time budget is split between the two phases (managers get the smaller
@@ -196,9 +199,10 @@ to the solver on every request). Mirrored as defaults in `solver/models.py`.
 | Manager presence | ≥1 manager whenever open (a manager on their lunch still counts as present) |
 | Rush target | 5 staff, 11:00–13:00 & 18:00–20:00 (soft) |
 | Baseline | floor 3 (blocking) / target 4 (soft) |
-| Late-night cap | ≤2 after per-day cutoff (hard): Mon 22:00, Tue 23:00, Wed 22:30, Thu 23:00, Fri–Sun 23:30 |
+| Late-night target | 2+ staff after per-day cutoff (soft), except the final close hour: Mon 22:00, Tue 23:00, Wed 22:30, Thu 23:00, Fri-Sun 23:30 |
 | Daily labor | 70h min / 75h soft cap / 80h hard cap |
 | Shift length | 4–8.5h regular, ≤10.5h GM, ≤4h minor (school night) |
+| Rest between shifts | ≥8h between one shift ending and the next shift starting |
 | Unpaid lunch | one 30-min break per completed 5h (5h → 1, 10h+ → 2) |
 | Minor school nights | ≤4h and not past 10:00 PM (Sun–Thu nights) |
 | Days off | ≥2 per employee per week, i.e. ≤5 working days (hard) |

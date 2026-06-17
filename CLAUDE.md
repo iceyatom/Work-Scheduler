@@ -114,6 +114,8 @@ src/components/          # GridEditor, TimelineView, PrintableReport, SliderEdit
 - **Shift-selection model**: per `(employee, day)` it enumerates candidate shifts
   that already respect structural rules (availability, length 4–8.5h / GM 10.5h /
   minor ≤4h on school nights, not-past-10pm for minors). A bool var picks ≤1/day.
+  Adjacent-day picks for the same employee must leave ≥8h between the prior shift
+  end and the next shift start.
 - **Two-phase solve**:
   1. **Managers/GM first** — only managers, keep ≥1 present at all open hours.
      Even spread comes from having to cover the whole day; they're free to work
@@ -126,9 +128,12 @@ src/components/          # GridEditor, TimelineView, PrintableReport, SliderEdit
   The CP-SAT time budget is split (~35% phase 1, rest phase 2).
 - **Soft-over-hard philosophy**: coverage/manager/labor-min are weighted penalties
   so the solver always returns its best feasible schedule + a gap report. True
-  hard constraints: late-night cap (≤2 after cutoff), 80h/day hard cap, weekly
-  max-hours, ≥2 days off/week (≤5 working days), structural rules, hard-sets.
-  *All HARD caps that include the fixed base (late-night, daily-hard-cap, weekly-max,
+  hard constraints: 80h/day hard cap, weekly max-hours, ≥2 days off/week (≤5
+  working days), ≥8h between adjacent shifts, structural rules, hard-sets, and
+  open/close-edge caps.
+  The late-night period is now a soft target: 2+ active staff after each day's
+  cutoff, except the final close hour.
+  *All HARD caps that include the fixed base (daily-hard-cap, weekly-max,
   open/close-edge) are **decision-capped** — they bound only the selectable shifts
   against the room left by hard-sets, so an over-the-cap hard-set degrades to a
   reported gap instead of making the whole phase INFEASIBLE and dropping every crew.*

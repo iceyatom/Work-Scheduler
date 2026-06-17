@@ -7,8 +7,8 @@ picks at most one candidate per employee per day. Coverage, manager presence,
 labour and priority weighting are then expressed over those variables.
 
 Design philosophy (spec §1): soft constraints over hard failures. Only true
-upper-bound caps are modelled as hard constraints (late-night max, daily labour
-hard cap, weekly max hours) plus the structural rules baked into candidate
+upper-bound caps are modelled as hard constraints (daily labour hard cap, weekly
+max hours, open/close edge caps) plus the structural rules baked into candidate
 generation. Everything else is a weighted penalty so the solver always returns
 its best feasible schedule, and unmet items come back as a gap report.
 """
@@ -28,7 +28,8 @@ W_MANAGER = 1000      # per missing manager, per slot (phase 1) — drives an ev
 W_BASE_FLOOR = 250    # per staff below the hard floor (3), per slot
 W_BASE_TARGET = 25    # per staff below the baseline target (4), per slot
 W_RUSH = 40           # per staff below the rush target (5), per rush slot
-W_OPEN_EDGE = 30      # per crew below the open/close-hour target (1), per edge slot
+W_OPEN_EDGE = 30      # per role below the open/close-hour target, per edge slot
+W_LATE_NIGHT = 90     # per staff below the late-night target (2), per late slot
 W_LABOR_MIN = 2       # per minute below the daily 70h minimum
 W_LABOR_OVER = 3      # per minute over the daily 75h soft cap
 W_MINHOURS = 1        # per minute an employee is below their weekly minimum
@@ -245,6 +246,65 @@ def _assignment_to_fixed(a: Assignment, cfg: StoreConfig, is_manager: bool) -> F
     )
 
 
+def _abs_start(day: int, start: int) -> int:
+    return day * 1440 + start
+
+
+def _abs_end(day: int, end: int) -> int:
+    # end may be > 1440 for shifts that close after midnight.
+    return day * 1440 + end
+
+
+def _add_rest_constraints(model, x, candidates: list[Candidate], fixed: list[FixedShift], cfg: StoreConfig) -> None:
+    """HARD: no employee can start a shift less than the configured rest period
+    after their prior shift ends. Fixed-vs-fixed violations are reported as
+    gaps, not made infeasible, because hard-set shifts are constants."""
+    cand_by_emp_day: dict[tuple[str, int], list[int]] = {}
+    fixed_by_emp_day: dict[tuple[str, int], list[FixedShift]] = {}
+    for i, c in enumerate(candidates):
+        cand_by_emp_day.setdefault((c.emp_id, c.day), []).append(i)
+    for f in fixed:
+        fixed_by_emp_day.setdefault((f.emp_id, f.day), []).append(f)
+
+    var_day: dict[tuple[str, int], dict[str, object]] = {}
+    for (emp_id, day), idxs in cand_by_emp_day.items():
+        worked = model.NewBoolVar(f"worked_{emp_id}_{day}")
+        model.Add(worked == sum(x[i] for i in idxs))
+        start_expr = sum(candidates[i].start * x[i] for i in idxs)
+        end_expr = sum(candidates[i].end * x[i] for i in idxs)
+        var_day[(emp_id, day)] = {"worked": worked, "start": start_expr, "end": end_expr}
+
+    emp_ids = {c.emp_id for c in candidates} | {f.emp_id for f in fixed}
+    for emp_id in emp_ids:
+        # No wrap from Sunday to Monday: the next week's Monday is outside this
+        # schedule request and cannot be known here.
+        for day in range(cfg.daysPerWeek - 1):
+            cur_var = var_day.get((emp_id, day))
+            next_var = var_day.get((emp_id, day + 1))
+            cur_fixed = fixed_by_emp_day.get((emp_id, day), [])
+            next_fixed = fixed_by_emp_day.get((emp_id, day + 1), [])
+
+            if cur_var is not None and next_var is not None:
+                model.Add(
+                    _abs_start(day + 1, 0) + next_var["start"] - (_abs_end(day, 0) + cur_var["end"])
+                    >= cfg.minRestBetweenShiftsMin
+                ).OnlyEnforceIf([cur_var["worked"], next_var["worked"]])
+
+            if next_var is not None:
+                for prev in cur_fixed:
+                    model.Add(
+                        _abs_start(day + 1, 0) + next_var["start"] - _abs_end(prev.day, prev.end)
+                        >= cfg.minRestBetweenShiftsMin
+                    ).OnlyEnforceIf(next_var["worked"])
+
+            if cur_var is not None:
+                for nxt in next_fixed:
+                    model.Add(
+                        _abs_start(nxt.day, nxt.start) - (_abs_end(day, 0) + cur_var["end"])
+                        >= cfg.minRestBetweenShiftsMin
+                    ).OnlyEnforceIf(cur_var["worked"])
+
+
 def _solve_phase(
     cfg: StoreConfig,
     decision_employees: list[Employee],
@@ -267,6 +327,8 @@ def _solve_phase(
         groups.setdefault((c.emp_id, c.day), []).append(i)
     for idxs in groups.values():
         model.Add(sum(x[i] for i in idxs) <= 1)
+
+    _add_rest_constraints(model, x, candidates, fixed, cfg)
 
     ub = max(1, len({c.emp_id for c in candidates}) + len({f.emp_id for f in fixed}))
 
@@ -318,17 +380,6 @@ def _solve_phase(
             staff = model.NewIntVar(0, ub, f"staff_{day}_{s}")
             model.Add(staff == sum(x[i] for i in cand_idxs) + bstaff)
 
-            # HARD: late-night cap (spec §3.3). Cap only the *decision* staff
-            # against the room left by the fixed base. Hard-sets (and phase-1
-            # managers) can already exceed the cap on their own; that
-            # over-coverage is unavoidable, so it must degrade to a reported gap
-            # rather than making the whole phase INFEASIBLE and dropping every
-            # crew member. (Without this, two managers + a crew hard-set all
-            # closing past the cutoff wiped out all non-hard-set crew.)
-            if is_late(day, slot_min) and cand_idxs:
-                room = max(0, cfg.lateNightMaxStaff - bstaff)
-                model.Add(sum(x[i] for i in cand_idxs) <= room)
-
             edge = is_open_edge(slot_min)
 
             if manager_phase:
@@ -351,6 +402,10 @@ def _solve_phase(
                 if edge and cand_idxs:
                     room = max(0, cfg.openEdgeMaxManagers - bstaff)
                     model.Add(sum(x[i] for i in cand_idxs) <= room)
+                if edge:
+                    edge_mgr_short = model.NewIntVar(0, cfg.openEdgeMaxManagers, f"emshort_{day}_{s}")
+                    model.Add(edge_mgr_short >= cfg.openEdgeMaxManagers - staff)
+                    obj.append(W_OPEN_EDGE * edge_mgr_short)
                 continue
 
             # Crew phase coverage (managers already fixed).
@@ -370,7 +425,10 @@ def _solve_phase(
                 obj.append(W_OPEN_EDGE * edge_short)
                 continue
             if is_late(day, slot_min):
-                continue  # late-night: only the cap applies (closing crew)
+                late_short = model.NewIntVar(0, cfg.lateNightMinStaff, f"lnshort_{day}_{s}")
+                model.Add(late_short >= cfg.lateNightMinStaff - staff)
+                obj.append(W_LATE_NIGHT * late_short)
+                continue
             if in_rush(slot_min):
                 rush_short = model.NewIntVar(0, cfg.rushTargetStaff, f"rshort_{day}_{s}")
                 model.Add(rush_short >= cfg.rushTargetStaff - staff)
@@ -398,7 +456,7 @@ def _solve_phase(
             model.Add(daypaid == sum(paid_by_day[day]) + paid_by_day_base[day])
             # HARD daily hard cap, applied to the decision portion only: fixed
             # hard-sets that already blow the cap degrade to a gap, not
-            # infeasibility (same rationale as the late-night cap above).
+            # infeasibility.
             if paid_by_day[day]:
                 room = max(0, cfg.dailyLaborHardCapMin - paid_by_day_base[day])
                 model.Add(sum(paid_by_day[day]) <= room)
@@ -659,7 +717,7 @@ def compute_gaps(employees: list[Employee], assignments: list[Assignment], cfg: 
         _emit_ranges(day, mgr_flags, "MANAGER_ABSENCE", lambda h, n: f"no manager on site (have {h})", gaps, cfg)
 
         # Open/close edge hours: exactly one manager + one crew. Over-coverage is
-        # blocking; missing crew is a warning. These windows are exempt from the
+        # blocking; missing either role is a warning. These windows are exempt from the
         # late-night / rush / baseline rules below (the edge rule supersedes them).
         edge_over_flags = []
         edge_under_flags = []
@@ -670,19 +728,19 @@ def compute_gaps(employees: list[Employee], assignments: list[Assignment], cfg: 
                 edge_over_flags.append(("BLOCKING", staff[s], edge_max))
             else:
                 edge_over_flags.append(None)
-            if is_open_edge(slot_min) and crew_active[s] < cfg.openEdgeMaxCrew:
-                edge_under_flags.append(("WARNING", crew_active[s], cfg.openEdgeMaxCrew))
+            if is_open_edge(slot_min) and (mgr_active[s] < cfg.openEdgeMaxManagers or crew_active[s] < cfg.openEdgeMaxCrew):
+                edge_under_flags.append(("WARNING", staff[s], edge_max))
             else:
                 edge_under_flags.append(None)
         _emit_ranges(day, edge_over_flags, "OPEN_EDGE_OVER_CAP", lambda h, n: f"{h} working in the open/close hour (max {n}: one manager + one crew)", gaps, cfg)
-        _emit_ranges(day, edge_under_flags, "OPEN_EDGE_UNDERSTAFFED", lambda h, n: f"{h} crew in the open/close hour (want {n})", gaps, cfg)
+        _emit_ranges(day, edge_under_flags, "OPEN_EDGE_UNDERSTAFFED", lambda h, n: f"{h} working in the open/close hour (want {n}: one manager + one crew)", gaps, cfg)
 
         late_flags = []
         for s in range(cfg.slotsPerDay):
             slot_min = cfg.storeOpenMin + s * cfg.slotMinutes
             late = slot_min >= cfg.lateNightCutoffMin[day]
-            late_flags.append(("BLOCKING", staff[s], cfg.lateNightMaxStaff) if (late and not is_open_edge(slot_min) and staff[s] > cfg.lateNightMaxStaff) else None)
-        _emit_ranges(day, late_flags, "LATE_NIGHT_OVER_CAP", lambda h, n: f"{h} staff after cutoff (max {n})", gaps, cfg)
+            late_flags.append(("WARNING", staff[s], cfg.lateNightMinStaff) if (late and not is_open_edge(slot_min) and staff[s] < cfg.lateNightMinStaff) else None)
+        _emit_ranges(day, late_flags, "LATE_NIGHT_BELOW_TARGET", lambda h, n: f"late-night staffed {h} (target at least {n})", gaps, cfg)
 
         rush_flags = []
         base_flags = []
@@ -700,16 +758,14 @@ def compute_gaps(employees: list[Employee], assignments: list[Assignment], cfg: 
                 rush_flags.append(None)
                 if staff[s] < cfg.baselineFloorStaff:
                     base_flags.append(("BLOCKING", staff[s], cfg.baselineFloorStaff))
-                elif staff[s] < cfg.baselineTargetStaff:
-                    base_flags.append(("WARNING", staff[s], cfg.baselineTargetStaff))
                 else:
                     base_flags.append(None)
         _emit_ranges(day, rush_flags, "RUSH_BELOW_TARGET", lambda h, n: f"rush staffed {h} (target {n})", gaps, cfg)
         _emit_ranges(
             day,
             base_flags,
-            "BASELINE_BELOW_TARGET",
-            lambda h, n: (f"below the {n}-staff hard floor (have {h})" if n == cfg.baselineFloorStaff else f"below the {n}-staff baseline (have {h})"),
+            "BASELINE_BELOW_FLOOR",
+            lambda h, n: f"below the {n}-staff hard floor (have {h})",
             gaps,
             cfg,
         )
@@ -750,6 +806,49 @@ def compute_gaps(employees: list[Employee], assignments: list[Assignment], cfg: 
                     endMin=None,
                     message=f"{name}: scheduled {len(days)} days — needs at least {cfg.minDaysOffPerWeek} days off (max {max_working_days} working days).",
                     detail={"employeeId": emp_id, "daysWorked": len(days), "max": max_working_days},
+                )
+            )
+
+    # Minimum rest between adjacent shifts. The solver enforces this for
+    # selectable shifts; this catches manual edits and fixed-vs-fixed hard-sets.
+    shifts_by_emp: dict[str, list[Assignment]] = {}
+    for a in assignments:
+        shifts_by_emp.setdefault(a.employeeId, []).append(a)
+    for emp_id, shifts in shifts_by_emp.items():
+        shifts.sort(key=lambda sh: (_abs_start(sh.dayOfWeek, sh.startMin), _abs_end(sh.dayOfWeek, sh.endMin)))
+        for prev, curr in zip(shifts, shifts[1:]):
+            rest = _abs_start(curr.dayOfWeek, curr.startMin) - _abs_end(prev.dayOfWeek, prev.endMin)
+            if rest >= cfg.minRestBetweenShiftsMin:
+                continue
+            emp = emp_by_id.get(emp_id)
+            name = emp.name if emp else emp_id
+            if rest < 0:
+                message = (
+                    f"{name}: shifts overlap from {DAY_NAMES[prev.dayOfWeek]} {_fmt(prev.startMin)}-{_fmt(prev.endMin)} "
+                    f"to {DAY_NAMES[curr.dayOfWeek]} {_fmt(curr.startMin)}-{_fmt(curr.endMin)}; "
+                    f"minimum rest is {cfg.minRestBetweenShiftsMin/60:.0f}h."
+                )
+            else:
+                message = (
+                    f"{name}: only {rest/60:.1f}h between {DAY_NAMES[prev.dayOfWeek]} shift ending {_fmt(prev.endMin)} "
+                    f"and {DAY_NAMES[curr.dayOfWeek]} shift starting {_fmt(curr.startMin)}; "
+                    f"minimum is {cfg.minRestBetweenShiftsMin/60:.0f}h."
+                )
+            gaps.append(
+                GapItem(
+                    kind="REST_PERIOD",
+                    severity="BLOCKING",
+                    dayOfWeek=curr.dayOfWeek,
+                    startMin=curr.startMin,
+                    endMin=curr.endMin,
+                    message=message,
+                    detail={
+                        "employeeId": emp_id,
+                        "previousDayOfWeek": prev.dayOfWeek,
+                        "previousEndMin": prev.endMin,
+                        "restMinutes": rest,
+                        "need": cfg.minRestBetweenShiftsMin,
+                    },
                 )
             )
     return gaps

@@ -36,8 +36,9 @@ export const DAYS_PER_WEEK = 7;
 // --- Manager presence (spec §2) -------------------------------------------
 export const MANAGER_MIN_ON_SITE = 1;
 
-// --- Late-night reduced coverage, HARD CAP (spec §3.3) --------------------
-// Max staff scheduled AFTER each day's cutoff (minutes from midnight).
+// --- Late-night reduced coverage, SOFT target ------------------------------
+// Target active staff scheduled after each day's cutoff. The final close hour is
+// governed by the open/close-edge rule below: exactly one manager + one crew.
 export const LATE_NIGHT_CUTOFF_MIN: number[] = [
   22 * 60, // Monday    10:00 PM
   23 * 60, // Tuesday   11:00 PM
@@ -47,7 +48,7 @@ export const LATE_NIGHT_CUTOFF_MIN: number[] = [
   23 * 60 + 30, // Saturday  11:30 PM
   23 * 60 + 30, // Sunday    11:30 PM
 ];
-export const LATE_NIGHT_MAX_STAFF = 2;
+export const LATE_NIGHT_MIN_STAFF = 2;
 
 // --- Rush coverage, SOFT (spec §3.1) --------------------------------------
 export const RUSH_TARGET_STAFF = 5;
@@ -63,8 +64,8 @@ export const BASELINE_TARGET_STAFF = 4; // preferred
 // --- Open/close edge hours -------------------------------------------------
 // Keep the first hour the store is open and the last hour before close lean:
 // exactly one manager and one regular (crew) employee. The caps are HARD upper
-// bounds (like the late-night cap); the "one each" target is soft. Outside
-// these two windows, baseline/rush coverage applies normally.
+// bounds; the "one each" target is soft. Outside these two windows,
+// baseline/rush/late-night coverage applies normally.
 export const OPEN_EDGE_WINDOW_MIN = 60; // first hour [open, open+60) & last hour [close-60, close)
 export const OPEN_EDGE_MAX_MANAGERS = 1;
 export const OPEN_EDGE_MAX_CREW = 1;
@@ -80,6 +81,7 @@ export const REGULAR_SHIFT_MAX_MIN = 8 * 60 + 30; // 510 (8.5h)
 export const GM_SHIFT_MAX_MIN = 10 * 60 + 30; // 630 (10.5h)
 export const LUNCH_BREAK_THRESHOLD_MIN = 5 * 60; // one break per completed 5h (>=5h)
 export const LUNCH_BREAK_MIN = 30; // 30-min unpaid break
+export const MIN_REST_BETWEEN_SHIFTS_MIN = 8 * 60; // 8h between one shift ending and the next starting
 
 // --- Minor school-night limits (spec §4) ----------------------------------
 export const MINOR_MAX_SHIFT_MIN = 4 * 60; // 240 (<= 4h)
@@ -118,7 +120,7 @@ export function storeConfig() {
     daysPerWeek: DAYS_PER_WEEK,
     managerMinOnSite: MANAGER_MIN_ON_SITE,
     lateNightCutoffMin: LATE_NIGHT_CUTOFF_MIN,
-    lateNightMaxStaff: LATE_NIGHT_MAX_STAFF,
+    lateNightMinStaff: LATE_NIGHT_MIN_STAFF,
     rushTargetStaff: RUSH_TARGET_STAFF,
     rushWindows: RUSH_WINDOWS,
     baselineFloorStaff: BASELINE_FLOOR_STAFF,
@@ -134,6 +136,7 @@ export function storeConfig() {
     gmShiftMaxMin: GM_SHIFT_MAX_MIN,
     lunchBreakThresholdMin: LUNCH_BREAK_THRESHOLD_MIN,
     lunchBreakMin: LUNCH_BREAK_MIN,
+    minRestBetweenShiftsMin: MIN_REST_BETWEEN_SHIFTS_MIN,
     minorMaxShiftMin: MINOR_MAX_SHIFT_MIN,
     minorLatestEndMin: MINOR_LATEST_END_MIN,
     schoolNights: SCHOOL_NIGHTS,

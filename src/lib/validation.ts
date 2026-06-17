@@ -13,7 +13,6 @@
 
 import {
   BASELINE_FLOOR_STAFF,
-  BASELINE_TARGET_STAFF,
   DAILY_LABOR_HARD_CAP_MIN,
   DAILY_LABOR_MIN_MIN,
   DAILY_LABOR_SOFT_CAP_MIN,
@@ -21,11 +20,12 @@ import {
   DAYS_PER_WEEK,
   GM_SHIFT_MAX_MIN,
   LATE_NIGHT_CUTOFF_MIN,
-  LATE_NIGHT_MAX_STAFF,
+  LATE_NIGHT_MIN_STAFF,
   LUNCH_BREAK_MIN,
   LUNCH_BREAK_THRESHOLD_MIN,
   MANAGER_MIN_ON_SITE,
   MIN_DAYS_OFF_PER_WEEK,
+  MIN_REST_BETWEEN_SHIFTS_MIN,
   MINOR_LATEST_END_MIN,
   MINOR_MAX_SHIFT_MIN,
   OPEN_EDGE_MAX_CREW,
@@ -235,6 +235,14 @@ function isOpenEdge(slotStartMin: number): boolean {
   return slotStartMin < STORE_OPEN_MIN + OPEN_EDGE_WINDOW_MIN || slotStartMin >= STORE_CLOSE_MIN - OPEN_EDGE_WINDOW_MIN;
 }
 
+function absoluteStart(dayOfWeek: number, startMin: number): number {
+  return dayOfWeek * 1440 + startMin;
+}
+
+function absoluteEnd(dayOfWeek: number, endMin: number): number {
+  return dayOfWeek * 1440 + endMin;
+}
+
 // Merge consecutive slots that share a gap into a single ranged GapItem.
 function emitRanges(
   dayOfWeek: number,
@@ -300,23 +308,23 @@ export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[])
         : null;
     });
     emitRanges(day, edgeOverFlags, "OPEN_EDGE_OVER_CAP", (h, n) => `${h} working in the open/close hour (max ${n}: one manager + one crew)`, gaps);
-    const edgeUnderFlags = crewActive.map((cw, i) => {
+    const edgeUnderFlags = staff.map((c, i) => {
       const slotStart = STORE_OPEN_MIN + i * SLOT_MINUTES;
-      return isOpenEdge(slotStart) && cw < OPEN_EDGE_MAX_CREW
-        ? ({ severity: "WARNING" as const, have: cw, need: OPEN_EDGE_MAX_CREW })
+      return isOpenEdge(slotStart) && (managerActive[i] < OPEN_EDGE_MAX_MANAGERS || crewActive[i] < OPEN_EDGE_MAX_CREW)
+        ? ({ severity: "WARNING" as const, have: c, need: edgeMax })
         : null;
     });
-    emitRanges(day, edgeUnderFlags, "OPEN_EDGE_UNDERSTAFFED", (h, n) => `${h} crew in the open/close hour (want ${n})`, gaps);
+    emitRanges(day, edgeUnderFlags, "OPEN_EDGE_UNDERSTAFFED", (h, n) => `${h} working in the open/close hour (want ${n}: one manager + one crew)`, gaps);
 
-    // Late-night cap (spec §3.3) – blocking when more than 2 staff after cutoff
-    // (the open/close-edge rule takes over for the last hour).
+    // Late-night minimum target. The final close hour is handled by the
+    // open/close-edge rule above.
     const lateFlags = staff.map((c, i) => {
       const slotStart = STORE_OPEN_MIN + i * SLOT_MINUTES;
-      return isLateNight(day, slotStart) && !isOpenEdge(slotStart) && c > LATE_NIGHT_MAX_STAFF
-        ? ({ severity: "BLOCKING" as const, have: c, need: LATE_NIGHT_MAX_STAFF })
+      return isLateNight(day, slotStart) && !isOpenEdge(slotStart) && c < LATE_NIGHT_MIN_STAFF
+        ? ({ severity: "WARNING" as const, have: c, need: LATE_NIGHT_MIN_STAFF })
         : null;
     });
-    emitRanges(day, lateFlags, "LATE_NIGHT_OVER_CAP", (h, n) => `${h} staff after late-night cutoff (max ${n})`, gaps);
+    emitRanges(day, lateFlags, "LATE_NIGHT_BELOW_TARGET", (h, n) => `late-night staffed ${h} (target at least ${n})`, gaps);
 
     // Rush coverage (spec §3.1).
     const rushFlags = staff.map((c, i) => {
@@ -327,19 +335,20 @@ export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[])
     });
     emitRanges(day, rushFlags, "RUSH_BELOW_TARGET", (h, n) => `rush staffed ${h} (target ${n})`, gaps);
 
-    // Baseline coverage (spec §3.2) – floor 3 (blocking), target 4 (warning).
+    // Baseline coverage (spec §3.2): report only the floor. The 4-staff target
+    // remains a solver preference, but lunch breaks commonly dip to 3 and should
+    // not create warning noise.
     const baseFlags = staff.map((c, i) => {
       const slotStart = STORE_OPEN_MIN + i * SLOT_MINUTES;
       if (inRush(slotStart) || isLateNight(day, slotStart) || isOpenEdge(slotStart)) return null;
       if (c < BASELINE_FLOOR_STAFF) return { severity: "BLOCKING" as const, have: c, need: BASELINE_FLOOR_STAFF };
-      if (c < BASELINE_TARGET_STAFF) return { severity: "WARNING" as const, have: c, need: BASELINE_TARGET_STAFF };
       return null;
     });
     emitRanges(
       day,
       baseFlags,
-      "BASELINE_BELOW_TARGET",
-      (h, n) => (n === BASELINE_FLOOR_STAFF ? `below the ${n}-staff hard floor (have ${h})` : `below the ${n}-staff baseline (have ${h})`),
+      "BASELINE_BELOW_FLOOR",
+      (h, n) => `below the ${n}-staff hard floor (have ${h})`,
       gaps,
     );
 
@@ -389,6 +398,46 @@ export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[])
         endMin: null,
         message: `${emp?.name ?? employeeId}: scheduled ${days.size} days — needs at least ${MIN_DAYS_OFF_PER_WEEK} days off (max ${maxWorkingDays} working days).`,
         detail: { employeeId, daysWorked: days.size, max: maxWorkingDays },
+      });
+    }
+  }
+
+  // Minimum rest between adjacent shifts. The solver enforces this for
+  // selectable shifts; this catches manual edits and fixed-vs-fixed hard-sets.
+  const shiftsByEmp = new Map<string, ShiftLite[]>();
+  for (const sh of shifts) {
+    if (!shiftsByEmp.has(sh.employeeId)) shiftsByEmp.set(sh.employeeId, []);
+    shiftsByEmp.get(sh.employeeId)!.push(sh);
+  }
+  for (const [employeeId, empShifts] of shiftsByEmp) {
+    const emp = empById.get(employeeId);
+    empShifts.sort((a, b) => {
+      const byStart = absoluteStart(a.dayOfWeek, a.startMin) - absoluteStart(b.dayOfWeek, b.startMin);
+      return byStart || absoluteEnd(a.dayOfWeek, a.endMin) - absoluteEnd(b.dayOfWeek, b.endMin);
+    });
+    for (let i = 1; i < empShifts.length; i++) {
+      const prev = empShifts[i - 1];
+      const curr = empShifts[i];
+      const rest = absoluteStart(curr.dayOfWeek, curr.startMin) - absoluteEnd(prev.dayOfWeek, prev.endMin);
+      if (rest >= MIN_REST_BETWEEN_SHIFTS_MIN) continue;
+      const message =
+        rest < 0
+          ? `${emp?.name ?? employeeId}: shifts overlap from ${DAY_NAMES[prev.dayOfWeek]} ${formatMinutesShort(prev.startMin)}-${formatMinutesShort(prev.endMin)} to ${DAY_NAMES[curr.dayOfWeek]} ${formatMinutesShort(curr.startMin)}-${formatMinutesShort(curr.endMin)}; minimum rest is ${MIN_REST_BETWEEN_SHIFTS_MIN / 60}h.`
+          : `${emp?.name ?? employeeId}: only ${(rest / 60).toFixed(1)}h between ${DAY_NAMES[prev.dayOfWeek]} shift ending ${formatMinutesShort(prev.endMin)} and ${DAY_NAMES[curr.dayOfWeek]} shift starting ${formatMinutesShort(curr.startMin)}; minimum is ${MIN_REST_BETWEEN_SHIFTS_MIN / 60}h.`;
+      gaps.push({
+        kind: "REST_PERIOD",
+        severity: "BLOCKING",
+        dayOfWeek: curr.dayOfWeek,
+        startMin: curr.startMin,
+        endMin: curr.endMin,
+        message,
+        detail: {
+          employeeId,
+          previousDayOfWeek: prev.dayOfWeek,
+          previousEndMin: prev.endMin,
+          restMinutes: rest,
+          need: MIN_REST_BETWEEN_SHIFTS_MIN,
+        },
       });
     }
   }

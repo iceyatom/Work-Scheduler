@@ -146,7 +146,6 @@ export function EmployeeForm({ initial, onClose, onSaved }: { initial: EmployeeD
                 <TimeField value={w.startMin} onChange={(v) => updateAt(d.availability, i, { startMin: v }, (next) => set({ availability: next }))} />
                 <span className="text-slate-400">to</span>
                 <TimeField value={w.endMin} onChange={(v) => updateAt(d.availability, i, { endMin: v }, (next) => set({ availability: next }))} />
-                <ShiftTotals startMin={w.startMin} endMin={w.endMin} />
               </>
             )}
           />
@@ -261,13 +260,15 @@ function ListEditor<T>({
         <div className="space-y-1.5">
           {items.map((item, i) => (
             <div key={i} className="flex flex-wrap items-center gap-2 rounded-md bg-slate-50 px-2 py-1.5">
-              {render(item, i)}
-              <button onClick={() => onDuplicate(i)} className="text-slate-400 hover:text-brand" title="Duplicate (copy then change the day)">
-                ⧉
-              </button>
-              <button onClick={() => onRemove(i)} className="text-slate-400 hover:text-red-600" title="Remove">
-                ✕
-              </button>
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">{render(item, i)}</div>
+              <div className="ml-auto flex shrink-0 items-center gap-2">
+                <button onClick={() => onDuplicate(i)} className="text-slate-400 hover:text-brand" title="Duplicate (copy then change the day)">
+                  ⧉
+                </button>
+                <button onClick={() => onRemove(i)} className="text-slate-400 hover:text-red-600" title="Remove">
+                  ✕
+                </button>
+              </div>
             </div>
           ))}
         </div>

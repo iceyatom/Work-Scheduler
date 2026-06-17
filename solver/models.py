@@ -22,7 +22,7 @@ class StoreConfig(BaseModel):
     daysPerWeek: int
     managerMinOnSite: int
     lateNightCutoffMin: list[int]
-    lateNightMaxStaff: int
+    lateNightMinStaff: int
     rushTargetStaff: int
     rushWindows: list[RushWindow]
     baselineFloorStaff: int
@@ -38,6 +38,7 @@ class StoreConfig(BaseModel):
     gmShiftMaxMin: int
     lunchBreakThresholdMin: int
     lunchBreakMin: int
+    minRestBetweenShiftsMin: int
     minorMaxShiftMin: int
     minorLatestEndMin: int
     schoolNights: list[int]
