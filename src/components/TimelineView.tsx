@@ -59,6 +59,17 @@ function isOpenEdge(slotStartMin: number): boolean {
   return slotStartMin < STORE_OPEN_MIN + OPEN_EDGE_WINDOW_MIN || slotStartMin >= STORE_CLOSE_MIN - OPEN_EDGE_WINDOW_MIN;
 }
 
+// Target active-staff for a slot, mirroring slotStatus' reference points. Drawn
+// as the red target line over the coverage bars.
+function slotTarget(day: number, slotStartMin: number): number {
+  if (isOpenEdge(slotStartMin)) return EDGE_TARGET_STAFF;
+  if (slotStartMin >= LATE_NIGHT_CUTOFF_MIN[day]) return LATE_NIGHT_MIN_STAFF;
+  const slotEnd = slotStartMin + SLOT_MINUTES;
+  const inRush = RUSH_WINDOWS.some((w) => slotStartMin >= w.startMin && slotEnd <= w.endMin);
+  if (inRush) return RUSH_TARGET_STAFF;
+  return BASELINE_TARGET_STAFF;
+}
+
 function SlotGrid({ className }: { className?: string }) {
   return (
     <div className={clsx("pointer-events-none absolute inset-0", className)}>
@@ -333,10 +344,23 @@ export function TimelineView({
                   key={s}
                   className={clsx("relative z-10 flex-1 border-l", s % 4 === 0 ? "border-slate-500/35" : "border-white/60", color, count === 0 && "bg-slate-100")}
                   style={{ height: `${Math.min(count, 6) * 16}%` }}
-                  title={`${formatMinutesShort(slotStart)} - ${count} staff${managerPresent[s] ? "" : " - no manager"}`}
+                  title={`${formatMinutesShort(slotStart)} - ${count} staff (target ${slotTarget(day, slotStart)})${managerPresent[s] ? "" : " - no manager"}`}
                 />
               );
             })}
+            {/* Target line: a red stepped outline of each slot's staffing target,
+                drawn at the same 16%-per-staff scale as the bars. */}
+            <div className="pointer-events-none absolute inset-0 z-20 flex">
+              {Array.from({ length: SLOTS_PER_DAY }).map((_, s) => {
+                const slotStart = STORE_OPEN_MIN + s * SLOT_MINUTES;
+                const target = slotTarget(day, slotStart);
+                return (
+                  <div key={s} className="relative flex-1">
+                    <span className="absolute inset-x-0 border-t-2 border-red-500/80" style={{ bottom: `${Math.min(target, 6) * 16}%` }} />
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -361,6 +385,7 @@ export function TimelineView({
         <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-emerald-500" /> meets target</span>
         <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-amber-400" /> below target</span>
         <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-red-500" /> below floor / edge over cap</span>
+        <span className="flex items-center gap-1"><span className="inline-block h-0 w-3 border-t-2 border-red-500/80" /> staffing target</span>
       </div>
     </div>
   );
