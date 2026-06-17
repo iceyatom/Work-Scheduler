@@ -3,7 +3,7 @@
 import { Badge } from "@/components/ui";
 import type { GapItem } from "@/lib/types";
 
-const KIND_LABEL: Record<string, string> = {
+export const KIND_LABEL: Record<string, string> = {
   MANAGER_ABSENCE: "Manager",
   LATE_NIGHT_BELOW_TARGET: "Late-night",
   LATE_NIGHT_OVER_CAP: "Late-night cap",
