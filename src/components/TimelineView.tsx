@@ -259,8 +259,8 @@ export function TimelineView({
             const emp = empById.get(empId);
             const rowShifts = dayAssignments.filter((a) => a.employeeId === empId);
             return (
-              <div key={empId} className="flex items-center border-b border-slate-50">
-                <div className="w-40 shrink-0 truncate py-2 pr-2 text-sm text-slate-700">
+              <div key={empId} className={clsx("flex items-center border-b border-slate-50", emp?.isManager && "bg-brand/20")}>
+                <div className={clsx("w-40 shrink-0 truncate border-l-4 py-2 pl-2 pr-2 text-sm", emp?.isManager ? "border-brand font-semibold text-brand-dark" : "border-transparent text-slate-700")}>
                   {emp?.name}
                   {emp?.isManager && <span className="ml-1 text-brand">*</span>}
                 </div>
