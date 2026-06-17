@@ -316,7 +316,7 @@ export default function SchedulePage({ params }: { params: { id: string } }) {
 
       <Card className="p-4">
         {tab === "grid" && <GridEditor detail={draftDetail} onCellClick={openEditor} gaps={gapList} />}
-        {tab === "timeline" && <TimelineView detail={draftDetail} onShiftChange={updateShift} />}
+        {tab === "timeline" && <TimelineView detail={draftDetail} onShiftChange={updateShift} gaps={gapList} />}
         {tab === "report" && <PrintableReport detail={draftDetail} />}
         {tab === "gaps" && <GapReportView gaps={gapList} />}
       </Card>
