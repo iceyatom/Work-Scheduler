@@ -133,16 +133,16 @@ export function validateShift(emp: EmployeeLite, dayOfWeek: number, startMin: nu
     });
   }
   if (duration > maxShift) {
-    // The GM's 10.5h cap is a soft guideline for manual edits: a manager may
-    // deliberately schedule the GM longer, so surface it as a warning rather
-    // than blocking the save. The solver still enforces GM_SHIFT_MAX_MIN as a
-    // hard cap when auto-generating (solver/engine.py) — this only relaxes the
-    // manual-edit validation. Everyone else's max stays blocking.
+    // Shift-length maxes are soft guidelines for MANUAL edits: a manager may
+    // deliberately schedule a crew member past the 8.5h max (or the GM past
+    // 10.5h), so surface it as a warning rather than blocking the save. The
+    // solver still enforces these as HARD caps when auto-generating
+    // (solver/engine.py) — this only relaxes the manual-edit validation.
     out.push({
-      severity: emp.isGM ? "WARNING" : "BLOCKING",
+      severity: "WARNING",
       message: emp.isGM
         ? `Shift exceeds the ${(maxShift / 60).toFixed(1)}h GM guideline.`
-        : `Shift exceeds the ${(maxShift / 60).toFixed(1)}h maximum.`,
+        : `Shift exceeds the ${(maxShift / 60).toFixed(1)}h maximum (allowed for manual edits).`,
     });
   }
 
