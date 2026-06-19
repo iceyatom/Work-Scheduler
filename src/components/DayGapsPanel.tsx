@@ -19,12 +19,14 @@ export function DayGapsPanel({
   onClose,
   activeIndex = null,
   onSelect,
+  onDismiss,
 }: {
   day: number;
   gaps: GapItem[];
   onClose: () => void;
   activeIndex?: number | null;
   onSelect?: (index: number) => void;
+  onDismiss?: (gap: GapItem) => void;
 }) {
   const blocking = gaps.filter((g) => g.severity === "BLOCKING").length;
   const warning = gaps.length - blocking;
@@ -71,10 +73,10 @@ export function DayGapsPanel({
         <ul ref={listRef} className="max-h-[13.5rem] space-y-1.5 overflow-y-auto scroll-thin p-3">
           {gaps.map((g, i) => {
             const tone = g.severity === "BLOCKING" ? "red" : "amber";
-            const rowClass = clsx(
-              "flex w-full items-start gap-2 rounded-md border px-3 py-2 text-left text-sm transition",
+            const containerClass = clsx(
+              "flex items-start gap-2 rounded-md border px-3 py-2 text-sm transition",
               g.severity === "BLOCKING" ? "border-red-200 bg-red-50 text-red-800" : "border-amber-200 bg-amber-50 text-amber-800",
-              onSelect && "cursor-pointer hover:brightness-95",
+              onSelect && "hover:brightness-95",
               activeIndex === i && (g.severity === "BLOCKING" ? "ring-2 ring-red-500" : "ring-2 ring-amber-500"),
             );
             const inner = (
@@ -86,13 +88,22 @@ export function DayGapsPanel({
               </>
             );
             return (
-              <li key={i}>
+              <li key={i} className={containerClass}>
                 {onSelect ? (
-                  <button type="button" onClick={() => onSelect(i)} className={rowClass}>
+                  <button type="button" onClick={() => onSelect(i)} className="flex flex-1 items-start gap-2 text-left">
                     {inner}
                   </button>
                 ) : (
-                  <div className={rowClass}>{inner}</div>
+                  <div className="flex flex-1 items-start gap-2">{inner}</div>
+                )}
+                {onDismiss && (
+                  <button
+                    type="button"
+                    onClick={() => onDismiss(g)}
+                    className="shrink-0 self-center text-xs font-medium text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline"
+                  >
+                    Dismiss
+                  </button>
                 )}
               </li>
             );

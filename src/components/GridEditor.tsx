@@ -15,10 +15,12 @@ export function GridEditor({
   detail,
   onCellClick,
   gaps = [],
+  onDismissGap,
 }: {
   detail: ScheduleDetail;
   onCellClick: (employeeId: string, dayOfWeek: number, assignment: AssignmentRow | null) => void;
   gaps?: GapItem[];
+  onDismissGap?: (gap: GapItem) => void;
 }) {
   const { employees, assignments } = detail;
   const index = indexAssignments(assignments);
@@ -36,7 +38,7 @@ export function GridEditor({
 
   return (
     <div>
-      {openDay !== null && <DayGapsPanel day={openDay} gaps={gapsByDay[openDay]} onClose={() => setOpenDay(null)} />}
+      {openDay !== null && <DayGapsPanel day={openDay} gaps={gapsByDay[openDay]} onClose={() => setOpenDay(null)} onDismiss={onDismissGap} />}
 
       <div className="overflow-x-auto scroll-thin">
       <table className="w-full border-collapse text-sm">

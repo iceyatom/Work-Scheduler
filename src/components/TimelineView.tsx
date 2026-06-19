@@ -123,10 +123,12 @@ export function TimelineView({
   detail,
   onShiftChange,
   gaps = [],
+  onDismissGap,
 }: {
   detail: ScheduleDetail;
   onShiftChange?: (assignment: AssignmentRow, startMin: number, endMin: number) => Promise<void>;
   gaps?: GapItem[];
+  onDismissGap?: (gap: GapItem) => void;
 }) {
   const [day, setDay] = useState(0);
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -317,6 +319,7 @@ export function TimelineView({
           onClose={() => setShowIssues(false)}
           activeIndex={activeGapIndex}
           onSelect={(i) => setActiveGapIndex((cur) => (cur === i ? null : i))}
+          onDismiss={onDismissGap}
         />
       )}
 

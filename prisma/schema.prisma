@@ -148,6 +148,9 @@ model Schedule {
   // Gap report (unmet soft constraints) stored as JSONB (spec §7.6, §10).
   gaps Json?
   meta Json?
+  // Stable keys (see src/lib/gap-key.ts) of gaps the user has dismissed; hidden
+  // from the grid/timeline/active gap report but restorable from the gap report.
+  dismissedGaps String[] @default([])
 
   assignments Assignment[]
   jobs        Job[]
