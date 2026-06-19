@@ -6,7 +6,7 @@
 
 import type { Prisma, PersonnelChange } from "@prisma/client";
 import { prisma } from "./prisma";
-import { storeConfig } from "./constants";
+import { storeConfig, type ConstraintConfig } from "./constants";
 import { computeGapReport, deriveShift, type EmployeeLite, type ShiftLite } from "./validation";
 import { isoDate } from "./time";
 import type {
@@ -159,6 +159,7 @@ async function persistSchedule(opts: {
         objectiveValue: response.objectiveValue ?? null,
         solveMs: response.solveMs,
         gaps: response.gaps as unknown as Prisma.InputJsonValue,
+        config: request.config as unknown as Prisma.InputJsonValue,
         meta: { employeeCount: request.employees.length, mode: request.mode } as Prisma.InputJsonValue,
         assignments: {
           create: response.assignments.map((a) => ({
@@ -183,13 +184,13 @@ async function persistSchedule(opts: {
 
 // --- F-1: generate from blank ----------------------------------------------
 
-export async function generateSchedule(opts: { name: string; weekStartISO: string; accountId: string }) {
+export async function generateSchedule(opts: { name: string; weekStartISO: string; accountId: string; config?: Partial<ConstraintConfig> | null }) {
   const employees = await prisma.employee.findMany({ where: { active: true, accountId: opts.accountId }, include: employeeInclude });
   const solverEmployees = employees.map((e) => toSolverEmployee(e, opts.weekStartISO));
 
   const request: SolveRequest = {
     mode: "GENERATE",
-    config: storeConfig(),
+    config: storeConfig(opts.config),
     timeLimitSeconds: SOLVER_TIME_LIMIT,
     employees: solverEmployees,
   };
@@ -233,7 +234,8 @@ export async function resolveSchedule(opts: { scheduleId: string; accountId: str
 
   const request: SolveRequest = {
     mode: "RESOLVE",
-    config: storeConfig(),
+    // Re-solve with the same constraints the prior schedule was generated with.
+    config: storeConfig(prior.config as Partial<ConstraintConfig> | null),
     timeLimitSeconds: SOLVER_TIME_LIMIT,
     employees: survivingEmployees,
     existingAssignments,
@@ -286,7 +288,7 @@ export async function recomputeGaps(scheduleId: string): Promise<GapItem[]> {
     paidMinutes: a.paidMinutes,
   }));
 
-  const gaps = computeGapReport(empLite, shifts);
+  const gaps = computeGapReport(empLite, shifts, storeConfig(schedule.config as Partial<ConstraintConfig> | null));
   await prisma.schedule.update({ where: { id: scheduleId }, data: { gaps: gaps as unknown as Prisma.InputJsonValue } });
   return gaps;
 }

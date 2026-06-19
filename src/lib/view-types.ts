@@ -2,6 +2,7 @@
 
 import type { EmployeeLite } from "./validation";
 import type { GapItem } from "./types";
+import type { ConstraintConfig } from "./constants";
 
 export interface AssignmentRow {
   id: string;
@@ -27,6 +28,7 @@ export interface ScheduleRow {
   solveMs: number | null;
   gaps: GapItem[] | null;
   dismissedGaps?: string[];
+  config?: Partial<ConstraintConfig> | null;
   createdAt: string;
 }
 

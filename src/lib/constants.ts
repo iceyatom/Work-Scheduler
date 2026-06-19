@@ -110,40 +110,53 @@ export const CANDIDATE_START_STEP_MIN = 30;
 /** Duration grid for candidate shift generation (minutes). */
 export const CANDIDATE_DURATION_STEP_MIN = 30;
 
-/** Bundle of every parameter sent to the solver, so it stays in lock-step. */
-export function storeConfig() {
-  return {
-    storeOpenMin: STORE_OPEN_MIN,
-    storeCloseMin: STORE_CLOSE_MIN,
-    slotMinutes: SLOT_MINUTES,
-    slotsPerDay: SLOTS_PER_DAY,
-    daysPerWeek: DAYS_PER_WEEK,
-    managerMinOnSite: MANAGER_MIN_ON_SITE,
-    lateNightCutoffMin: LATE_NIGHT_CUTOFF_MIN,
-    lateNightMinStaff: LATE_NIGHT_MIN_STAFF,
-    rushTargetStaff: RUSH_TARGET_STAFF,
-    rushWindows: RUSH_WINDOWS,
-    baselineFloorStaff: BASELINE_FLOOR_STAFF,
-    baselineTargetStaff: BASELINE_TARGET_STAFF,
-    openEdgeWindowMin: OPEN_EDGE_WINDOW_MIN,
-    openEdgeMaxManagers: OPEN_EDGE_MAX_MANAGERS,
-    openEdgeMaxCrew: OPEN_EDGE_MAX_CREW,
-    dailyLaborMinMin: DAILY_LABOR_MIN_MIN,
-    dailyLaborSoftCapMin: DAILY_LABOR_SOFT_CAP_MIN,
-    dailyLaborHardCapMin: DAILY_LABOR_HARD_CAP_MIN,
-    regularShiftMinMin: REGULAR_SHIFT_MIN_MIN,
-    regularShiftMaxMin: REGULAR_SHIFT_MAX_MIN,
-    gmShiftMaxMin: GM_SHIFT_MAX_MIN,
-    lunchBreakThresholdMin: LUNCH_BREAK_THRESHOLD_MIN,
-    lunchBreakMin: LUNCH_BREAK_MIN,
-    minRestBetweenShiftsMin: MIN_REST_BETWEEN_SHIFTS_MIN,
-    minorMaxShiftMin: MINOR_MAX_SHIFT_MIN,
-    minorLatestEndMin: MINOR_LATEST_END_MIN,
-    schoolNights: SCHOOL_NIGHTS,
-    minDaysOffPerWeek: MIN_DAYS_OFF_PER_WEEK,
-    candidateStartStepMin: CANDIDATE_START_STEP_MIN,
-    candidateDurationStepMin: CANDIDATE_DURATION_STEP_MIN,
-  };
+// Fixed slot geometry — NOT user-customizable (changing it would re-shape the
+// whole timeline/grid). The customizable constraints below sit on top of this.
+const GEOMETRY = {
+  storeOpenMin: STORE_OPEN_MIN,
+  storeCloseMin: STORE_CLOSE_MIN,
+  slotMinutes: SLOT_MINUTES,
+  slotsPerDay: SLOTS_PER_DAY,
+  daysPerWeek: DAYS_PER_WEEK,
+};
+
+/** The user-customizable solver constraints (everything except slot geometry).
+ *  Edited in the "Customize constraints" modal and persisted per schedule. */
+export const DEFAULT_CONSTRAINTS = {
+  managerMinOnSite: MANAGER_MIN_ON_SITE,
+  lateNightCutoffMin: LATE_NIGHT_CUTOFF_MIN as number[],
+  lateNightMinStaff: LATE_NIGHT_MIN_STAFF,
+  rushTargetStaff: RUSH_TARGET_STAFF,
+  rushWindows: RUSH_WINDOWS as { label: string; startMin: number; endMin: number }[],
+  baselineFloorStaff: BASELINE_FLOOR_STAFF,
+  baselineTargetStaff: BASELINE_TARGET_STAFF,
+  openEdgeWindowMin: OPEN_EDGE_WINDOW_MIN,
+  openEdgeMaxManagers: OPEN_EDGE_MAX_MANAGERS,
+  openEdgeMaxCrew: OPEN_EDGE_MAX_CREW,
+  dailyLaborMinMin: DAILY_LABOR_MIN_MIN,
+  dailyLaborSoftCapMin: DAILY_LABOR_SOFT_CAP_MIN,
+  dailyLaborHardCapMin: DAILY_LABOR_HARD_CAP_MIN,
+  regularShiftMinMin: REGULAR_SHIFT_MIN_MIN,
+  regularShiftMaxMin: REGULAR_SHIFT_MAX_MIN,
+  gmShiftMaxMin: GM_SHIFT_MAX_MIN,
+  lunchBreakThresholdMin: LUNCH_BREAK_THRESHOLD_MIN,
+  lunchBreakMin: LUNCH_BREAK_MIN,
+  minRestBetweenShiftsMin: MIN_REST_BETWEEN_SHIFTS_MIN,
+  minorMaxShiftMin: MINOR_MAX_SHIFT_MIN,
+  minorLatestEndMin: MINOR_LATEST_END_MIN,
+  schoolNights: SCHOOL_NIGHTS as number[],
+  minDaysOffPerWeek: MIN_DAYS_OFF_PER_WEEK,
+  candidateStartStepMin: CANDIDATE_START_STEP_MIN,
+  candidateDurationStepMin: CANDIDATE_DURATION_STEP_MIN,
+};
+
+export type ConstraintConfig = typeof DEFAULT_CONSTRAINTS;
+
+/** Bundle of every parameter sent to the solver, so it stays in lock-step.
+ *  Optional `overrides` apply the user's customized constraints on top of the
+ *  defaults; slot geometry is always the fixed default. */
+export function storeConfig(overrides?: Partial<ConstraintConfig> | null) {
+  return { ...GEOMETRY, ...DEFAULT_CONSTRAINTS, ...(overrides ?? {}) };
 }
 
 export type StoreConfig = ReturnType<typeof storeConfig>;

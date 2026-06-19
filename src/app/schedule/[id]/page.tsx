@@ -14,6 +14,7 @@ import { ChangeQueueModal } from "@/components/ChangeQueueModal";
 import { getJSON, sendJSON } from "@/lib/client";
 import { dateForDay } from "@/lib/schedule-helpers";
 import { computeGapReport, deriveShift, type EmployeeLite, type ShiftLite } from "@/lib/validation";
+import { storeConfig } from "@/lib/constants";
 import { gapKey } from "@/lib/gap-key";
 import type { GapItem } from "@/lib/types";
 import type { AssignmentRow, ScheduleDetail } from "@/lib/view-types";
@@ -123,7 +124,9 @@ export default function SchedulePage({ params }: { params: { id: string } }) {
       breakStarts: a.breakStarts,
       paidMinutes: a.paidMinutes,
     }));
-    return computeGapReport(detail.employees, shifts);
+    // Use this schedule's saved constraints so the live gap report matches the
+    // config it was generated with (falls back to defaults for older schedules).
+    return computeGapReport(detail.employees, shifts, storeConfig(detail.schedule.config));
   }, [detail, draft]);
 
   // Split the live gaps into active vs dismissed by their stable key.

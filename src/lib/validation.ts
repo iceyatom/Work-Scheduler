@@ -12,34 +12,16 @@
 // ---------------------------------------------------------------------------
 
 import {
-  BASELINE_FLOOR_STAFF,
-  DAILY_LABOR_HARD_CAP_MIN,
-  DAILY_LABOR_MIN_MIN,
-  DAILY_LABOR_SOFT_CAP_MIN,
   DAY_NAMES,
   DAYS_PER_WEEK,
-  GM_SHIFT_MAX_MIN,
-  LATE_NIGHT_CUTOFF_MIN,
-  LATE_NIGHT_MIN_STAFF,
+  DEFAULT_CONSTRAINTS,
   LUNCH_BREAK_MIN,
   LUNCH_BREAK_THRESHOLD_MIN,
-  MANAGER_MIN_ON_SITE,
-  MIN_DAYS_OFF_PER_WEEK,
-  MIN_REST_BETWEEN_SHIFTS_MIN,
-  MINOR_LATEST_END_MIN,
-  MINOR_MAX_SHIFT_MIN,
-  OPEN_EDGE_MAX_CREW,
-  OPEN_EDGE_MAX_MANAGERS,
-  OPEN_EDGE_WINDOW_MIN,
-  REGULAR_SHIFT_MAX_MIN,
-  REGULAR_SHIFT_MIN_MIN,
-  RUSH_TARGET_STAFF,
-  RUSH_WINDOWS,
-  SCHOOL_NIGHTS,
   SLOTS_PER_DAY,
   SLOT_MINUTES,
   STORE_CLOSE_MIN,
   STORE_OPEN_MIN,
+  type ConstraintConfig,
 } from "./constants";
 import { formatMinutesShort, snapToSlot } from "./time";
 import type { GapItem, GapSeverity } from "./types";
@@ -96,9 +78,9 @@ export function deriveShift(startMin: number, endMin: number): {
 
 // General per-shift max. The minor 4h cap is a *school-night* rule, enforced
 // separately in validateShift; on other nights minors follow the regular max.
-export function maxShiftMinFor(emp: { isGM: boolean }): number {
-  if (emp.isGM) return GM_SHIFT_MAX_MIN;
-  return REGULAR_SHIFT_MAX_MIN;
+export function maxShiftMinFor(emp: { isGM: boolean }, cfg: ConstraintConfig = DEFAULT_CONSTRAINTS): number {
+  if (emp.isGM) return cfg.gmShiftMaxMin;
+  return cfg.regularShiftMaxMin;
 }
 
 // --- Single-shift validation (slider live validation) ----------------------
@@ -110,7 +92,7 @@ export interface ShiftViolation {
 
 /** Validate one proposed shift against the structural rules. Returns an empty
  *  array when the shift is legal. Used by the slider editor for live feedback. */
-export function validateShift(emp: EmployeeLite, dayOfWeek: number, startMin: number, endMin: number): ShiftViolation[] {
+export function validateShift(emp: EmployeeLite, dayOfWeek: number, startMin: number, endMin: number, cfg: ConstraintConfig = DEFAULT_CONSTRAINTS): ShiftViolation[] {
   const out: ShiftViolation[] = [];
   const duration = endMin - startMin;
 
@@ -125,11 +107,11 @@ export function validateShift(emp: EmployeeLite, dayOfWeek: number, startMin: nu
     });
   }
 
-  const maxShift = maxShiftMinFor(emp);
-  if (duration < REGULAR_SHIFT_MIN_MIN) {
+  const maxShift = maxShiftMinFor(emp, cfg);
+  if (duration < cfg.regularShiftMinMin) {
     out.push({
       severity: "BLOCKING",
-      message: `Shift is shorter than the ${REGULAR_SHIFT_MIN_MIN / 60}h minimum.`,
+      message: `Shift is shorter than the ${cfg.regularShiftMinMin / 60}h minimum.`,
     });
   }
   if (duration > maxShift) {
@@ -147,17 +129,17 @@ export function validateShift(emp: EmployeeLite, dayOfWeek: number, startMin: nu
   }
 
   // Minor school-night limits (spec §4).
-  if (emp.isMinor && SCHOOL_NIGHTS.includes(dayOfWeek)) {
-    if (endMin > MINOR_LATEST_END_MIN) {
+  if (emp.isMinor && cfg.schoolNights.includes(dayOfWeek)) {
+    if (endMin > cfg.minorLatestEndMin) {
       out.push({
         severity: "BLOCKING",
-        message: `Minor cannot work past ${formatMinutesShort(MINOR_LATEST_END_MIN)} on a school night.`,
+        message: `Minor cannot work past ${formatMinutesShort(cfg.minorLatestEndMin)} on a school night.`,
       });
     }
-    if (duration > MINOR_MAX_SHIFT_MIN) {
+    if (duration > cfg.minorMaxShiftMin) {
       out.push({
         severity: "BLOCKING",
-        message: `Minor cannot work more than ${MINOR_MAX_SHIFT_MIN / 60}h on a school night.`,
+        message: `Minor cannot work more than ${cfg.minorMaxShiftMin / 60}h on a school night.`,
       });
     }
   }
@@ -221,18 +203,18 @@ export function coverageForDay(shifts: ShiftLite[], empById: Map<string, Employe
   return { staff, managerPresent, managerActive };
 }
 
-function inRush(slotStartMin: number): boolean {
+function inRush(slotStartMin: number, cfg: ConstraintConfig): boolean {
   const slotEnd = slotStartMin + SLOT_MINUTES;
-  return RUSH_WINDOWS.some((w) => slotStartMin >= w.startMin && slotEnd <= w.endMin);
+  return cfg.rushWindows.some((w) => slotStartMin >= w.startMin && slotEnd <= w.endMin);
 }
 
-function isLateNight(dayOfWeek: number, slotStartMin: number): boolean {
-  return slotStartMin >= LATE_NIGHT_CUTOFF_MIN[dayOfWeek];
+function isLateNight(dayOfWeek: number, slotStartMin: number, cfg: ConstraintConfig): boolean {
+  return slotStartMin >= cfg.lateNightCutoffMin[dayOfWeek];
 }
 
 /** First hour the store is open, or the last hour before it closes. */
-function isOpenEdge(slotStartMin: number): boolean {
-  return slotStartMin < STORE_OPEN_MIN + OPEN_EDGE_WINDOW_MIN || slotStartMin >= STORE_CLOSE_MIN - OPEN_EDGE_WINDOW_MIN;
+function isOpenEdge(slotStartMin: number, cfg: ConstraintConfig): boolean {
+  return slotStartMin < STORE_OPEN_MIN + cfg.openEdgeWindowMin || slotStartMin >= STORE_CLOSE_MIN - cfg.openEdgeWindowMin;
 }
 
 function absoluteStart(dayOfWeek: number, startMin: number): number {
@@ -278,9 +260,10 @@ function emitRanges(
 }
 
 /** Compute the full gap report for a week of assignments (spec §7.6). */
-export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[]): GapItem[] {
+export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[], cfg: ConstraintConfig = DEFAULT_CONSTRAINTS): GapItem[] {
   const empById = new Map(employees.map((e) => [e.id, e]));
   const gaps: GapItem[] = [];
+  const hrs = (min: number) => (min / 60).toFixed(0);
 
   for (let day = 0; day < 7; day++) {
     const { staff, managerPresent, managerActive } = coverageForDay(shifts, empById, day);
@@ -291,8 +274,8 @@ export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[])
     // counts as present (managerPresent includes break slots).
     const mgrFlags: (null | { severity: GapSeverity; have: number; need: number })[] = managerPresent.map((m, i) => {
       const anyOpenCoverage = staff[i] > 0;
-      return m < MANAGER_MIN_ON_SITE && anyOpenCoverage
-        ? ({ severity: "BLOCKING" as const, have: m, need: MANAGER_MIN_ON_SITE })
+      return m < cfg.managerMinOnSite && anyOpenCoverage
+        ? ({ severity: "BLOCKING" as const, have: m, need: cfg.managerMinOnSite })
         : null;
     });
     emitRanges(day, mgrFlags, "MANAGER_ABSENCE", (h) => `no manager on site (have ${h})`, gaps);
@@ -300,17 +283,17 @@ export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[])
     // Open/close edge hours – exactly one manager + one crew. Over-coverage is
     // blocking; missing crew is a warning. These windows supersede the
     // late-night / rush / baseline rules below.
-    const edgeMax = OPEN_EDGE_MAX_MANAGERS + OPEN_EDGE_MAX_CREW;
+    const edgeMax = cfg.openEdgeMaxManagers + cfg.openEdgeMaxCrew;
     const edgeOverFlags = staff.map((c, i) => {
       const slotStart = STORE_OPEN_MIN + i * SLOT_MINUTES;
-      return isOpenEdge(slotStart) && (managerActive[i] > OPEN_EDGE_MAX_MANAGERS || crewActive[i] > OPEN_EDGE_MAX_CREW)
+      return isOpenEdge(slotStart, cfg) && (managerActive[i] > cfg.openEdgeMaxManagers || crewActive[i] > cfg.openEdgeMaxCrew)
         ? ({ severity: "BLOCKING" as const, have: c, need: edgeMax })
         : null;
     });
     emitRanges(day, edgeOverFlags, "OPEN_EDGE_OVER_CAP", (h, n) => `${h} working in the open/close hour (max ${n}: one manager + one crew)`, gaps);
     const edgeUnderFlags = staff.map((c, i) => {
       const slotStart = STORE_OPEN_MIN + i * SLOT_MINUTES;
-      return isOpenEdge(slotStart) && (managerActive[i] < OPEN_EDGE_MAX_MANAGERS || crewActive[i] < OPEN_EDGE_MAX_CREW)
+      return isOpenEdge(slotStart, cfg) && (managerActive[i] < cfg.openEdgeMaxManagers || crewActive[i] < cfg.openEdgeMaxCrew)
         ? ({ severity: "WARNING" as const, have: c, need: edgeMax })
         : null;
     });
@@ -320,8 +303,8 @@ export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[])
     // open/close-edge rule above.
     const lateFlags = staff.map((c, i) => {
       const slotStart = STORE_OPEN_MIN + i * SLOT_MINUTES;
-      return isLateNight(day, slotStart) && !isOpenEdge(slotStart) && c < LATE_NIGHT_MIN_STAFF
-        ? ({ severity: "WARNING" as const, have: c, need: LATE_NIGHT_MIN_STAFF })
+      return isLateNight(day, slotStart, cfg) && !isOpenEdge(slotStart, cfg) && c < cfg.lateNightMinStaff
+        ? ({ severity: "WARNING" as const, have: c, need: cfg.lateNightMinStaff })
         : null;
     });
     emitRanges(day, lateFlags, "LATE_NIGHT_BELOW_TARGET", (h, n) => `late-night staffed ${h} (target at least ${n})`, gaps);
@@ -329,8 +312,8 @@ export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[])
     // Rush coverage (spec §3.1).
     const rushFlags = staff.map((c, i) => {
       const slotStart = STORE_OPEN_MIN + i * SLOT_MINUTES;
-      return inRush(slotStart) && !isLateNight(day, slotStart) && !isOpenEdge(slotStart) && c < RUSH_TARGET_STAFF
-        ? ({ severity: "WARNING" as const, have: c, need: RUSH_TARGET_STAFF })
+      return inRush(slotStart, cfg) && !isLateNight(day, slotStart, cfg) && !isOpenEdge(slotStart, cfg) && c < cfg.rushTargetStaff
+        ? ({ severity: "WARNING" as const, have: c, need: cfg.rushTargetStaff })
         : null;
     });
     emitRanges(day, rushFlags, "RUSH_BELOW_TARGET", (h, n) => `rush staffed ${h} (target ${n})`, gaps);
@@ -340,8 +323,8 @@ export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[])
     // not create warning noise.
     const baseFlags = staff.map((c, i) => {
       const slotStart = STORE_OPEN_MIN + i * SLOT_MINUTES;
-      if (inRush(slotStart) || isLateNight(day, slotStart) || isOpenEdge(slotStart)) return null;
-      if (c < BASELINE_FLOOR_STAFF) return { severity: "BLOCKING" as const, have: c, need: BASELINE_FLOOR_STAFF };
+      if (inRush(slotStart, cfg) || isLateNight(day, slotStart, cfg) || isOpenEdge(slotStart, cfg)) return null;
+      if (c < cfg.baselineFloorStaff) return { severity: "BLOCKING" as const, have: c, need: cfg.baselineFloorStaff };
       return null;
     });
     emitRanges(
@@ -354,12 +337,12 @@ export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[])
 
     // Daily labour (spec §2).
     const dayPaid = shifts.filter((s) => s.dayOfWeek === day).reduce((a, s) => a + s.paidMinutes, 0);
-    if (dayPaid > 0 && dayPaid < DAILY_LABOR_MIN_MIN) {
-      gaps.push(dayLaborGap(day, "LABOR_BELOW_MIN", "WARNING", dayPaid, DAILY_LABOR_MIN_MIN, "below the 70h daily minimum"));
-    } else if (dayPaid > DAILY_LABOR_HARD_CAP_MIN) {
-      gaps.push(dayLaborGap(day, "LABOR_OVER_HARD_CAP", "BLOCKING", dayPaid, DAILY_LABOR_HARD_CAP_MIN, "over the 80h daily hard cap"));
-    } else if (dayPaid > DAILY_LABOR_SOFT_CAP_MIN) {
-      gaps.push(dayLaborGap(day, "LABOR_OVER_SOFT_CAP", "WARNING", dayPaid, DAILY_LABOR_SOFT_CAP_MIN, "over the 75h daily soft cap"));
+    if (dayPaid > 0 && dayPaid < cfg.dailyLaborMinMin) {
+      gaps.push(dayLaborGap(day, "LABOR_BELOW_MIN", "WARNING", dayPaid, cfg.dailyLaborMinMin, `below the ${hrs(cfg.dailyLaborMinMin)}h daily minimum`));
+    } else if (dayPaid > cfg.dailyLaborHardCapMin) {
+      gaps.push(dayLaborGap(day, "LABOR_OVER_HARD_CAP", "BLOCKING", dayPaid, cfg.dailyLaborHardCapMin, `over the ${hrs(cfg.dailyLaborHardCapMin)}h daily hard cap`));
+    } else if (dayPaid > cfg.dailyLaborSoftCapMin) {
+      gaps.push(dayLaborGap(day, "LABOR_OVER_SOFT_CAP", "WARNING", dayPaid, cfg.dailyLaborSoftCapMin, `over the ${hrs(cfg.dailyLaborSoftCapMin)}h daily soft cap`));
     }
   }
 
@@ -367,7 +350,7 @@ export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[])
   for (const sh of shifts) {
     const emp = empById.get(sh.employeeId);
     if (!emp) continue;
-    for (const v of validateShift(emp, sh.dayOfWeek, sh.startMin, sh.endMin)) {
+    for (const v of validateShift(emp, sh.dayOfWeek, sh.startMin, sh.endMin, cfg)) {
       gaps.push({
         kind: v.message.toLowerCase().includes("minor") ? "MINOR_RULE" : v.message.toLowerCase().includes("avail") ? "AVAILABILITY" : "SHIFT_RULE",
         severity: v.severity,
@@ -381,7 +364,7 @@ export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[])
   }
 
   // Minimum days off per week: each employee must work <= maxWorkingDays.
-  const maxWorkingDays = DAYS_PER_WEEK - MIN_DAYS_OFF_PER_WEEK;
+  const maxWorkingDays = DAYS_PER_WEEK - cfg.minDaysOffPerWeek;
   const daysWorked = new Map<string, Set<number>>();
   for (const sh of shifts) {
     if (!daysWorked.has(sh.employeeId)) daysWorked.set(sh.employeeId, new Set());
@@ -396,7 +379,7 @@ export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[])
         dayOfWeek: null,
         startMin: null,
         endMin: null,
-        message: `${emp?.name ?? employeeId}: scheduled ${days.size} days — needs at least ${MIN_DAYS_OFF_PER_WEEK} days off (max ${maxWorkingDays} working days).`,
+        message: `${emp?.name ?? employeeId}: scheduled ${days.size} days — needs at least ${cfg.minDaysOffPerWeek} days off (max ${maxWorkingDays} working days).`,
         detail: { employeeId, daysWorked: days.size, max: maxWorkingDays },
       });
     }
@@ -419,11 +402,11 @@ export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[])
       const prev = empShifts[i - 1];
       const curr = empShifts[i];
       const rest = absoluteStart(curr.dayOfWeek, curr.startMin) - absoluteEnd(prev.dayOfWeek, prev.endMin);
-      if (rest >= MIN_REST_BETWEEN_SHIFTS_MIN) continue;
+      if (rest >= cfg.minRestBetweenShiftsMin) continue;
       const message =
         rest < 0
-          ? `${emp?.name ?? employeeId}: shifts overlap from ${DAY_NAMES[prev.dayOfWeek]} ${formatMinutesShort(prev.startMin)}-${formatMinutesShort(prev.endMin)} to ${DAY_NAMES[curr.dayOfWeek]} ${formatMinutesShort(curr.startMin)}-${formatMinutesShort(curr.endMin)}; minimum rest is ${MIN_REST_BETWEEN_SHIFTS_MIN / 60}h.`
-          : `${emp?.name ?? employeeId}: only ${(rest / 60).toFixed(1)}h between ${DAY_NAMES[prev.dayOfWeek]} shift ending ${formatMinutesShort(prev.endMin)} and ${DAY_NAMES[curr.dayOfWeek]} shift starting ${formatMinutesShort(curr.startMin)}; minimum is ${MIN_REST_BETWEEN_SHIFTS_MIN / 60}h.`;
+          ? `${emp?.name ?? employeeId}: shifts overlap from ${DAY_NAMES[prev.dayOfWeek]} ${formatMinutesShort(prev.startMin)}-${formatMinutesShort(prev.endMin)} to ${DAY_NAMES[curr.dayOfWeek]} ${formatMinutesShort(curr.startMin)}-${formatMinutesShort(curr.endMin)}; minimum rest is ${cfg.minRestBetweenShiftsMin / 60}h.`
+          : `${emp?.name ?? employeeId}: only ${(rest / 60).toFixed(1)}h between ${DAY_NAMES[prev.dayOfWeek]} shift ending ${formatMinutesShort(prev.endMin)} and ${DAY_NAMES[curr.dayOfWeek]} shift starting ${formatMinutesShort(curr.startMin)}; minimum is ${cfg.minRestBetweenShiftsMin / 60}h.`;
       gaps.push({
         kind: "REST_PERIOD",
         severity: "BLOCKING",
@@ -436,7 +419,7 @@ export function computeGapReport(employees: EmployeeLite[], shifts: ShiftLite[])
           previousDayOfWeek: prev.dayOfWeek,
           previousEndMin: prev.endMin,
           restMinutes: rest,
-          need: MIN_REST_BETWEEN_SHIFTS_MIN,
+          need: cfg.minRestBetweenShiftsMin,
         },
       });
     }
