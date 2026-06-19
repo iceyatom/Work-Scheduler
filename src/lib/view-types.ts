@@ -26,6 +26,7 @@ export interface ScheduleRow {
   objectiveValue: number | null;
   solveMs: number | null;
   gaps: GapItem[] | null;
+  dismissedGaps?: string[];
   createdAt: string;
 }
 

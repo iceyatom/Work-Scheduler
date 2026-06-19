@@ -1,19 +1,26 @@
 "use client";
 
+import { useState } from "react";
 import clsx from "clsx";
 import { DAY_NAMES } from "@/lib/constants";
 import { formatMinutesShort, hoursFromMin } from "@/lib/time";
 import { dailyPaidMinutes, indexAssignments, weeklyPaidMinutes } from "@/lib/schedule-helpers";
 import { Badge } from "@/components/ui";
+import { DayGapsPanel } from "@/components/DayGapsPanel";
+import type { GapItem } from "@/lib/types";
 import type { AssignmentRow, ScheduleDetail } from "@/lib/view-types";
 
 // Weekly employee × day matrix — the primary editing surface (spec §7.1).
 export function GridEditor({
   detail,
   onCellClick,
+  gaps = [],
+  onDismissGap,
 }: {
   detail: ScheduleDetail;
   onCellClick: (employeeId: string, dayOfWeek: number, assignment: AssignmentRow | null) => void;
+  gaps?: GapItem[];
+  onDismissGap?: (gap: GapItem) => void;
 }) {
   const { employees, assignments } = detail;
   const index = indexAssignments(assignments);
@@ -21,17 +28,50 @@ export function GridEditor({
   const scheduledIds = new Set(assignments.map((a) => a.employeeId));
   const rows = employees.filter((e) => e.active || scheduledIds.has(e.id));
 
+  // Day-specific gaps grouped by weekday (week-wide gaps like DAYS_OFF have a
+  // null dayOfWeek and stay in the Gap report tab).
+  const gapsByDay: GapItem[][] = Array.from({ length: 7 }, () => []);
+  for (const g of gaps) {
+    if (g.dayOfWeek !== null && g.dayOfWeek >= 0 && g.dayOfWeek < 7) gapsByDay[g.dayOfWeek].push(g);
+  }
+  const [openDay, setOpenDay] = useState<number | null>(null);
+
   return (
-    <div className="overflow-x-auto scroll-thin">
+    <div>
+      {openDay !== null && <DayGapsPanel day={openDay} gaps={gapsByDay[openDay]} onClose={() => setOpenDay(null)} onDismiss={onDismissGap} />}
+
+      <div className="overflow-x-auto scroll-thin">
       <table className="w-full border-collapse text-sm">
         <thead>
           <tr>
             <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2 text-left font-semibold text-slate-600">Employee</th>
-            {DAY_NAMES.map((d) => (
-              <th key={d} className="min-w-[110px] border-l border-slate-100 bg-slate-50 px-2 py-2 text-center font-semibold text-slate-600">
-                {d.slice(0, 3)}
-              </th>
-            ))}
+            {DAY_NAMES.map((d, day) => {
+              const dayGaps = gapsByDay[day];
+              const count = dayGaps.length;
+              const hasBlocking = dayGaps.some((g) => g.severity === "BLOCKING");
+              return (
+                <th key={d} className="min-w-[110px] border-l border-slate-100 bg-slate-50 px-2 py-2 text-center font-semibold text-slate-600">
+                  <div className="flex items-center justify-center gap-1.5">
+                    <span>{d.slice(0, 3)}</span>
+                    {count > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setOpenDay((cur) => (cur === day ? null : day))}
+                        className={clsx(
+                          "rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums transition-colors",
+                          hasBlocking ? "bg-red-100 text-red-700 hover:bg-red-200" : "bg-amber-100 text-amber-800 hover:bg-amber-200",
+                          openDay === day && "ring-2 ring-offset-1 " + (hasBlocking ? "ring-red-400" : "ring-amber-400"),
+                        )}
+                        title={`${count} issue${count > 1 ? "s" : ""} on ${d} — click to view`}
+                        aria-label={`${count} issue${count > 1 ? "s" : ""} on ${d}`}
+                      >
+                        {count}
+                      </button>
+                    )}
+                  </div>
+                </th>
+              );
+            })}
             <th className="border-l border-slate-200 bg-slate-50 px-3 py-2 text-right font-semibold text-slate-600">Weekly</th>
           </tr>
         </thead>
@@ -109,8 +149,10 @@ export function GridEditor({
       </table>
       <p className="mt-3 text-xs text-slate-500">
         Click any cell to add or edit a shift in the slider editor. <span className="text-brand-dark">Purple</span> = hard-set/locked,{" "}
-        <span className="text-emerald-700">green</span> = scheduled. Daily totals turn amber outside the 70–75h band and red over the 80h hard cap.
+        <span className="text-emerald-700">green</span> = scheduled. Daily totals turn amber outside the 70–75h band and red over the 80h hard cap.{" "}
+        Click an issue count beside a day to see what needs fixing.
       </p>
+      </div>
     </div>
   );
 }

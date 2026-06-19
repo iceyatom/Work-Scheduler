@@ -21,6 +21,8 @@ import {
 } from "@/lib/constants";
 import { formatMinutesShort, snapToSlot } from "@/lib/time";
 import { coverageForDay, deriveShift, validateShift, type EmployeeLite, type ShiftLite } from "@/lib/validation";
+import { DayGapsPanel } from "@/components/DayGapsPanel";
+import type { GapItem } from "@/lib/types";
 import type { AssignmentRow, ScheduleDetail } from "@/lib/view-types";
 
 const TOTAL = STORE_CLOSE_MIN - STORE_OPEN_MIN;
@@ -57,6 +59,17 @@ function slotStatus(day: number, slotStartMin: number, count: number): "ok" | "w
 
 function isOpenEdge(slotStartMin: number): boolean {
   return slotStartMin < STORE_OPEN_MIN + OPEN_EDGE_WINDOW_MIN || slotStartMin >= STORE_CLOSE_MIN - OPEN_EDGE_WINDOW_MIN;
+}
+
+// Target active-staff for a slot, mirroring slotStatus' reference points. Drawn
+// as the red target line over the coverage bars.
+function slotTarget(day: number, slotStartMin: number): number {
+  if (isOpenEdge(slotStartMin)) return EDGE_TARGET_STAFF;
+  if (slotStartMin >= LATE_NIGHT_CUTOFF_MIN[day]) return LATE_NIGHT_MIN_STAFF;
+  const slotEnd = slotStartMin + SLOT_MINUTES;
+  const inRush = RUSH_WINDOWS.some((w) => slotStartMin >= w.startMin && slotEnd <= w.endMin);
+  if (inRush) return RUSH_TARGET_STAFF;
+  return BASELINE_TARGET_STAFF;
 }
 
 function SlotGrid({ className }: { className?: string }) {
@@ -109,15 +122,35 @@ function dragPreview(drag: DragState, clientX: number): DragState {
 export function TimelineView({
   detail,
   onShiftChange,
+  gaps = [],
+  onDismissGap,
 }: {
   detail: ScheduleDetail;
   onShiftChange?: (assignment: AssignmentRow, startMin: number, endMin: number) => Promise<void>;
+  gaps?: GapItem[];
+  onDismissGap?: (gap: GapItem) => void;
 }) {
   const [day, setDay] = useState(0);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
+  const [showIssues, setShowIssues] = useState(false);
+  const [activeGapIndex, setActiveGapIndex] = useState<number | null>(null);
   const dragRef = useRef<DragState | null>(null);
+
+  // Per-day gaps (week-wide gaps with a null dayOfWeek stay in the Gap report tab).
+  const gapsByDay = useMemo(() => {
+    const buckets: GapItem[][] = Array.from({ length: 7 }, () => []);
+    for (const g of gaps) {
+      if (g.dayOfWeek !== null && g.dayOfWeek >= 0 && g.dayOfWeek < 7) buckets[g.dayOfWeek].push(g);
+    }
+    return buckets;
+  }, [gaps]);
+
+  // Selecting a different day clears the highlighted gap.
+  useEffect(() => {
+    setActiveGapIndex(null);
+  }, [day]);
 
   const empById = useMemo(() => new Map<string, EmployeeLite>(detail.employees.map((e) => [e.id, e])), [detail.employees]);
   const shifts: ShiftLite[] = detail.assignments.map((a) => ({
@@ -217,21 +250,78 @@ export function TimelineView({
   const hourTicks: number[] = [];
   for (let m = STORE_OPEN_MIN; m <= STORE_CLOSE_MIN; m += 60) hourTicks.push(m);
 
+  const dayGaps = gapsByDay[day];
+  // The selected gap (if it pins to a time range) drives the highlight band that
+  // is overlaid on the lanes and coverage graph.
+  const activeGap = showIssues && activeGapIndex !== null ? dayGaps[activeGapIndex] : null;
+  const highlight =
+    activeGap && activeGap.startMin !== null && activeGap.endMin !== null
+      ? { start: activeGap.startMin, end: activeGap.endMin, severity: activeGap.severity }
+      : null;
+  // Fresh element per call site (a single JSX node can't be mounted in several places).
+  const gapBand = () =>
+    highlight ? (
+      <div
+        className={clsx(
+          "pointer-events-none absolute inset-y-0 z-20 border-x-2",
+          highlight.severity === "BLOCKING" ? "border-red-500 bg-red-500/10" : "border-amber-500 bg-amber-400/15",
+        )}
+        style={{ left: `${pct(highlight.start)}%`, width: `${Math.max(pct(highlight.end) - pct(highlight.start), 0.4)}%` }}
+      />
+    ) : null;
+
   return (
     <div>
       <div className="mb-4 flex flex-wrap gap-1">
-        {DAY_NAMES.map((d, i) => (
-          <button
-            key={d}
-            onClick={() => setDay(i)}
-            className={clsx("rounded-md px-3 py-1.5 text-sm font-medium", i === day ? "bg-brand text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-100")}
-          >
-            {d.slice(0, 3)}
-          </button>
-        ))}
+        {DAY_NAMES.map((d, i) => {
+          const c = gapsByDay[i].length;
+          const blk = gapsByDay[i].some((g) => g.severity === "BLOCKING");
+          return (
+            <button
+              key={d}
+              onClick={() => setDay(i)}
+              className={clsx("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium", i === day ? "bg-brand text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-100")}
+            >
+              {d.slice(0, 3)}
+              {c > 0 && (
+                <span
+                  className={clsx(
+                    "rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
+                    i === day ? "bg-white/25 text-white" : blk ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800",
+                  )}
+                >
+                  {c}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {editError && <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{editError}</div>}
+
+      {/* Per-day issues, like the grid editor — selecting one highlights its slots below. */}
+      {dayGaps.length > 0 && !showIssues && (
+        <button
+          onClick={() => setShowIssues(true)}
+          className={clsx(
+            "mb-3 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium",
+            dayGaps.some((g) => g.severity === "BLOCKING") ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100" : "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100",
+          )}
+        >
+          ⚠ View {dayGaps.length} issue{dayGaps.length > 1 ? "s" : ""} on {DAY_NAMES[day]}
+        </button>
+      )}
+      {showIssues && (
+        <DayGapsPanel
+          day={day}
+          gaps={dayGaps}
+          onClose={() => setShowIssues(false)}
+          activeIndex={activeGapIndex}
+          onSelect={(i) => setActiveGapIndex((cur) => (cur === i ? null : i))}
+          onDismiss={onDismissGap}
+        />
+      )}
 
       <div className="min-w-[820px] overflow-x-auto scroll-thin">
         <div className="relative ml-40 h-6 border-b border-slate-200">
@@ -248,8 +338,8 @@ export function TimelineView({
             const emp = empById.get(empId);
             const rowShifts = dayAssignments.filter((a) => a.employeeId === empId);
             return (
-              <div key={empId} className="flex items-center border-b border-slate-50">
-                <div className="w-40 shrink-0 truncate py-2 pr-2 text-sm text-slate-700">
+              <div key={empId} className={clsx("flex items-center border-b border-slate-50", emp?.isManager && "bg-brand/20")}>
+                <div className={clsx("w-40 shrink-0 truncate border-l-4 py-2 pl-2 pr-2 text-sm", emp?.isManager ? "border-brand font-semibold text-brand-dark" : "border-transparent text-slate-700")}>
                   {emp?.name}
                   {emp?.isManager && <span className="ml-1 text-brand">*</span>}
                 </div>
@@ -259,6 +349,7 @@ export function TimelineView({
                   ))}
                   <div className="absolute inset-y-0 bg-slate-200/40" style={{ left: `${pct(cutoff)}%`, width: `${100 - pct(cutoff)}%` }} />
                   <SlotGrid className="z-0" />
+                  {gapBand()}
                   {rowShifts.map((a) => {
                     const preview = drag?.assignmentId === a.id ? { startMin: drag.nextStart, endMin: drag.nextEnd } : null;
                     const startMin = preview?.startMin ?? a.startMin;
@@ -333,10 +424,24 @@ export function TimelineView({
                   key={s}
                   className={clsx("relative z-10 flex-1 border-l", s % 4 === 0 ? "border-slate-500/35" : "border-white/60", color, count === 0 && "bg-slate-100")}
                   style={{ height: `${Math.min(count, 6) * 16}%` }}
-                  title={`${formatMinutesShort(slotStart)} - ${count} staff${managerPresent[s] ? "" : " - no manager"}`}
+                  title={`${formatMinutesShort(slotStart)} - ${count} staff (target ${slotTarget(day, slotStart)})${managerPresent[s] ? "" : " - no manager"}`}
                 />
               );
             })}
+            {/* Target line: a red stepped outline of each slot's staffing target,
+                drawn at the same 16%-per-staff scale as the bars. */}
+            <div className="pointer-events-none absolute inset-0 z-20 flex">
+              {Array.from({ length: SLOTS_PER_DAY }).map((_, s) => {
+                const slotStart = STORE_OPEN_MIN + s * SLOT_MINUTES;
+                const target = slotTarget(day, slotStart);
+                return (
+                  <div key={s} className="relative flex-1">
+                    <span className="absolute inset-x-0 border-t-2 border-red-500/80" style={{ bottom: `${Math.min(target, 6) * 16}%` }} />
+                  </div>
+                );
+              })}
+            </div>
+            {gapBand()}
           </div>
         </div>
 
@@ -344,6 +449,7 @@ export function TimelineView({
           <div className="w-40 shrink-0 pr-2 text-xs font-medium text-slate-500">Manager present</div>
           <div className="relative flex h-3 flex-1">
             <SlotGrid className="z-0" />
+            {gapBand()}
             {Array.from({ length: SLOTS_PER_DAY }).map((_, s) => (
               <div
                 key={s}
@@ -361,6 +467,7 @@ export function TimelineView({
         <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-emerald-500" /> meets target</span>
         <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-amber-400" /> below target</span>
         <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded bg-red-500" /> below floor / edge over cap</span>
+        <span className="flex items-center gap-1"><span className="inline-block h-0 w-3 border-t-2 border-red-500/80" /> staffing target</span>
       </div>
     </div>
   );

@@ -13,6 +13,8 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { getJSON, sendJSON } from "@/lib/client";
 import { dateForDay } from "@/lib/schedule-helpers";
 import { computeGapReport, deriveShift, type EmployeeLite, type ShiftLite } from "@/lib/validation";
+import { gapKey } from "@/lib/gap-key";
+import type { GapItem } from "@/lib/types";
 import type { AssignmentRow, ScheduleDetail } from "@/lib/view-types";
 
 type Tab = "grid" | "timeline" | "report" | "gaps";
@@ -48,6 +50,9 @@ export default function SchedulePage({ params }: { params: { id: string } }) {
   const [editing, setEditing] = useState<{ employee: EmployeeLite; dayOfWeek: number; assignment: AssignmentRow | null } | null>(null);
   // Pending action awaiting confirmation in the stylized discard dialog.
   const [pendingDiscard, setPendingDiscard] = useState<(() => void) | null>(null);
+  // Stable keys of dismissed gaps (persisted on the schedule, independent of the
+  // assignment draft so dismissing never marks the schedule dirty).
+  const [dismissed, setDismissed] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -55,6 +60,7 @@ export default function SchedulePage({ params }: { params: { id: string } }) {
       setDetail(d);
       setDraft(d.assignments);
       setBaseline(signature(d.assignments));
+      setDismissed(d.schedule.dismissedGaps ?? []);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -82,6 +88,29 @@ export default function SchedulePage({ params }: { params: { id: string } }) {
     }));
     return computeGapReport(detail.employees, shifts);
   }, [detail, draft]);
+
+  // Split the live gaps into active vs dismissed by their stable key.
+  const dismissedSet = useMemo(() => new Set(dismissed), [dismissed]);
+  const activeGaps = useMemo(() => gapList.filter((g) => !dismissedSet.has(gapKey(g))), [gapList, dismissedSet]);
+  const dismissedGaps = useMemo(() => gapList.filter((g) => dismissedSet.has(gapKey(g))), [gapList, dismissedSet]);
+
+  // Toggle a gap's dismissed state — optimistic, persisted to the schedule.
+  const setGapDismissed = useCallback(
+    async (gap: GapItem, value: boolean) => {
+      const key = gapKey(gap);
+      setDismissed((prev) => (value ? (prev.includes(key) ? prev : [...prev, key]) : prev.filter((k) => k !== key)));
+      try {
+        await sendJSON(`/api/schedules/${params.id}/dismissals`, "POST", { key, dismissed: value });
+      } catch (e) {
+        // Revert on failure.
+        setDismissed((prev) => (value ? prev.filter((k) => k !== key) : prev.includes(key) ? prev : [...prev, key]));
+        setError((e as Error).message);
+      }
+    },
+    [params.id],
+  );
+  const onDismissGap = useCallback((gap: GapItem) => setGapDismissed(gap, true), [setGapDismissed]);
+  const onRestoreGap = useCallback((gap: GapItem) => setGapDismissed(gap, false), [setGapDismissed]);
 
   // Warn on browser-level navigation (close tab, refresh, external link) while dirty.
   useEffect(() => {
@@ -224,9 +253,10 @@ export default function SchedulePage({ params }: { params: { id: string } }) {
   if (!detail) return null;
 
   const { schedule } = detail;
-  const draftDetail: ScheduleDetail = { ...detail, assignments: draft, schedule: { ...schedule, gaps: gapList } };
-  const blocking = gapList.filter((g) => g.severity === "BLOCKING").length;
-  const warning = gapList.filter((g) => g.severity === "WARNING").length;
+  const draftDetail: ScheduleDetail = { ...detail, assignments: draft, schedule: { ...schedule, gaps: activeGaps } };
+  // Dismissed gaps are excluded from counts and the grid/timeline views.
+  const blocking = activeGaps.filter((g) => g.severity === "BLOCKING").length;
+  const warning = activeGaps.filter((g) => g.severity === "WARNING").length;
 
   return (
     <div className="space-y-5">
@@ -315,10 +345,10 @@ export default function SchedulePage({ params }: { params: { id: string } }) {
       </div>
 
       <Card className="p-4">
-        {tab === "grid" && <GridEditor detail={draftDetail} onCellClick={openEditor} />}
-        {tab === "timeline" && <TimelineView detail={draftDetail} onShiftChange={updateShift} />}
+        {tab === "grid" && <GridEditor detail={draftDetail} onCellClick={openEditor} gaps={activeGaps} onDismissGap={onDismissGap} />}
+        {tab === "timeline" && <TimelineView detail={draftDetail} onShiftChange={updateShift} gaps={activeGaps} onDismissGap={onDismissGap} />}
         {tab === "report" && <PrintableReport detail={draftDetail} />}
-        {tab === "gaps" && <GapReportView gaps={gapList} />}
+        {tab === "gaps" && <GapReportView gaps={activeGaps} dismissed={dismissedGaps} onDismiss={onDismissGap} onRestore={onRestoreGap} />}
       </Card>
 
       {editing && (
