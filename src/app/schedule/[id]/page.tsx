@@ -10,6 +10,7 @@ import { PrintableReport } from "@/components/PrintableReport";
 import { GapReportView } from "@/components/GapReportView";
 import { SliderEditor } from "@/components/SliderEditor";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ChangeQueueModal } from "@/components/ChangeQueueModal";
 import { getJSON, sendJSON } from "@/lib/client";
 import { dateForDay } from "@/lib/schedule-helpers";
 import { computeGapReport, deriveShift, type EmployeeLite, type ShiftLite } from "@/lib/validation";
@@ -53,6 +54,22 @@ export default function SchedulePage({ params }: { params: { id: string } }) {
   // Stable keys of dismissed gaps (persisted on the schedule, independent of the
   // assignment draft so dismissing never marks the schedule dirty).
   const [dismissed, setDismissed] = useState<string[]>([]);
+  // Personnel-change queue: re-solve is only enabled when >0 changes are queued.
+  const [queuedCount, setQueuedCount] = useState(0);
+  const [showQueue, setShowQueue] = useState(false);
+  // Inline schedule-title editing.
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [savingTitle, setSavingTitle] = useState(false);
+
+  const loadQueuedCount = useCallback(async () => {
+    try {
+      const changes = await getJSON<{ status: string }[]>("/api/changes");
+      setQueuedCount(changes.filter((c) => c.status === "QUEUED").length);
+    } catch {
+      /* non-fatal: leave count as-is */
+    }
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -70,7 +87,27 @@ export default function SchedulePage({ params }: { params: { id: string } }) {
 
   useEffect(() => {
     load();
-  }, [load]);
+    loadQueuedCount();
+  }, [load, loadQueuedCount]);
+
+  async function saveTitle() {
+    const name = titleDraft.trim();
+    if (!detail || !name || name === detail.schedule.name) {
+      setEditingTitle(false);
+      return;
+    }
+    setSavingTitle(true);
+    setError(null);
+    try {
+      await sendJSON(`/api/schedules/${params.id}`, "PATCH", { name });
+      setDetail((d) => (d ? { ...d, schedule: { ...d.schedule, name } } : d));
+      setEditingTitle(false);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSavingTitle(false);
+    }
+  }
 
   const dirty = useMemo(() => signature(draft) !== baseline, [draft, baseline]);
 
@@ -267,10 +304,45 @@ export default function SchedulePage({ params }: { params: { id: string } }) {
         </button>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900">
-              {schedule.name}
-              <Badge color={schedule.generatedFrom === "RESOLVE" ? "blue" : "purple"}>{schedule.generatedFrom === "RESOLVE" ? "Re-solved" : "Generated"}</Badge>
-              {dirty && <Badge color="amber">Unsaved changes</Badge>}
+            <h1 className="flex flex-wrap items-center gap-2 text-2xl font-bold text-slate-900">
+              {editingTitle ? (
+                <>
+                  <input
+                    autoFocus
+                    value={titleDraft}
+                    onChange={(e) => setTitleDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void saveTitle();
+                      if (e.key === "Escape") setEditingTitle(false);
+                    }}
+                    maxLength={120}
+                    className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1 text-2xl font-bold text-slate-900 focus:border-brand focus:outline-none"
+                  />
+                  <Button onClick={() => void saveTitle()} disabled={savingTitle}>
+                    {savingTitle ? <Spinner /> : "Save"}
+                  </Button>
+                  <Button variant="secondary" onClick={() => setEditingTitle(false)} disabled={savingTitle}>
+                    Cancel
+                  </Button>
+                </>
+              ) : (
+                <>
+                  {schedule.name}
+                  <button
+                    onClick={() => {
+                      setTitleDraft(schedule.name);
+                      setEditingTitle(true);
+                    }}
+                    className="text-base text-slate-400 hover:text-brand"
+                    title="Rename schedule"
+                    aria-label="Rename schedule"
+                  >
+                    ✏️
+                  </button>
+                  <Badge color={schedule.generatedFrom === "RESOLVE" ? "blue" : "purple"}>{schedule.generatedFrom === "RESOLVE" ? "Re-solved" : "Generated"}</Badge>
+                  {dirty && <Badge color="amber">Unsaved changes</Badge>}
+                </>
+              )}
             </h1>
             <p className="mt-1 text-sm text-slate-500">
               Week of {dateForDay(schedule.weekStart, 0)} – {dateForDay(schedule.weekStart, 6)} · solver {schedule.solverStatus ?? "—"} · {schedule.solveMs ?? "—"} ms ·
@@ -286,11 +358,20 @@ export default function SchedulePage({ params }: { params: { id: string } }) {
                 🖨 Print
               </Button>
             )}
-            <Button onClick={resolve} disabled={resolving} title="Apply queued personnel changes and re-solve">
+            <Button variant="secondary" onClick={() => setShowQueue(true)} title="Queue personnel changes for this schedule">
+              ＋ Queue changes{queuedCount > 0 ? ` (${queuedCount})` : ""}
+            </Button>
+            <Button
+              onClick={resolve}
+              disabled={resolving || queuedCount === 0}
+              title={queuedCount === 0 ? "Queue at least one change to enable re-solve" : "Apply queued personnel changes and re-solve"}
+            >
               {resolving ? (
                 <>
                   <Spinner /> Re-solving…
                 </>
+              ) : queuedCount > 0 ? (
+                `Apply ${queuedCount} change${queuedCount === 1 ? "" : "s"} & re-solve`
               ) : (
                 "Apply changes & re-solve"
               )}
@@ -361,6 +442,8 @@ export default function SchedulePage({ params }: { params: { id: string } }) {
           onDelete={editing.assignment ? deleteShift : undefined}
         />
       )}
+
+      {showQueue && <ChangeQueueModal onClose={() => setShowQueue(false)} onQueueChanged={setQueuedCount} />}
 
       {pendingDiscard && (
         <ConfirmDialog

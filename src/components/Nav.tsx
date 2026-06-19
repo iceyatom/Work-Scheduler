@@ -8,7 +8,6 @@ import clsx from "clsx";
 const links = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/employees", label: "Employees" },
-  { href: "/changes", label: "Change queue" },
 ];
 
 interface Me {
