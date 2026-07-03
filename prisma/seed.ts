@@ -1,16 +1,16 @@
-// Seed the real store roster, derived from an actual Taco Bell Tracks "Weekly
-// Labor Schedule" export (store #031115 — Folsom, CA, week of 06/17). Day-of-week
-// is 0=Monday … 6=Sunday; times are minutes from midnight. Re-runnable: it wipes
+// Seed the real store roster (store #031115 — Folsom, CA). Day-of-week is
+// 0=Monday … 6=Sunday; times are minutes from midnight. Re-runnable: it wipes
 // & re-creates. Run with `npm run db:seed`.
 //
-// Notes on the mapping from the printed schedule:
-//   • The 4 highlighted names on the sheet are the managers (Dianna, Jaclyn,
-//     Kiera, Nicole). No employees were marked "M" (minor) that week.
-//   • Each person's `availability` is an envelope derived from when they actually
-//     worked (opener / mid / closer), widened a little to give the solver room.
-//   • Employment type & weekly hour caps come from the printed weekly totals.
-//   • Dianna is treated as the GM with a recurring hard-set opening shift,
-//     reflecting her standing 5:00 AM open in the data.
+// This snapshot reflects the CURRENT live database — the roster has been edited
+// in the running app since the original Tracks export, so a few things differ
+// from the printed sheet:
+//   • The 4 managers are Dianna, Jaclyn, Kiera, Nicole. Nicole W is now the GM
+//     (Dianna's GM flag was turned off).
+//   • Sakeenah Q is marked a minor; Eraj G is inactive (kept here for history).
+//   • Standing shifts live as template hard-sets (Jaclyn Wed, Nicole Tue,
+//     Easton Wed–Fri, Jonathan Tue/Thu).
+//   • `availability` defaults to all 7 days unless a `days` array is given.
 //   • The `Tracks ID:` comments are the real employee IDs from the export, kept
 //     for traceability.
 
@@ -31,6 +31,7 @@ type Seed = {
   isManager?: boolean;
   isGM?: boolean;
   isMinor?: boolean;
+  active?: boolean; // defaults to true
   performance: number;
   minHoursPerWeek?: number;
   maxHoursPerWeek?: number;
@@ -40,58 +41,58 @@ type Seed = {
 };
 
 const crew: Seed[] = [
-  // ---- Managers (highlighted on the sheet) -------------------------------
+  // ---- Managers ----------------------------------------------------------
   {
-    name: "Dianna B", // Tracks ID: 1447 — opener, weekly 39:30
+    name: "Dianna B", // Tracks ID: 1447
+    employmentType: "FULL_TIME",
+    isManager: true,
+    performance: 5,
+    minHoursPerWeek: 30,
+    maxHoursPerWeek: 40,
+    availability: [{ startMin: T(5), endMin: T(15) }],
+  },
+  {
+    name: "Jaclyn F", // Tracks ID: 0006
+    employmentType: "FULL_TIME",
+    isManager: true,
+    performance: 5,
+    minHoursPerWeek: 30,
+    maxHoursPerWeek: 40,
+    availability: [{ startMin: T(10), endMin: T(24, 30) }],
+    hardSets: [{ days: [2], startMin: T(10), endMin: T(18, 30) }],
+  },
+  {
+    name: "Kiera b", // Tracks ID: 0007
+    employmentType: "FULL_TIME",
+    isManager: true,
+    performance: 4,
+    minHoursPerWeek: 30,
+    maxHoursPerWeek: 40,
+    availability: [{ startMin: T(15), endMin: T(24, 30) }],
+  },
+  {
+    name: "Nicole W", // Tracks ID: 1279 — current GM
     employmentType: "FULL_TIME",
     isManager: true,
     isGM: true,
     performance: 5,
-    minHoursPerWeek: 38,
-    maxHoursPerWeek: 46,
-    availability: [{ startMin: T(5), endMin: T(15) }],
-    // Standing GM open (5:00 AM–1:30 PM) on the days she opened in the export.
-    hardSets: [{ days: [0, 1, 2, 5, 6], startMin: T(5), endMin: T(13, 30), note: "GM standing open" }],
-  },
-  {
-    name: "Jaclyn F", // Tracks ID: 0006 — mid/close, weekly 36:30
-    employmentType: "FULL_TIME",
-    isManager: true,
-    performance: 5,
-    minHoursPerWeek: 34,
-    maxHoursPerWeek: 42,
-    availability: [{ startMin: T(10), endMin: T(24, 30) }],
-  },
-  {
-    name: "Kiera b", // Tracks ID: 0007 — closer, weekly 38:00
-    employmentType: "FULL_TIME",
-    isManager: true,
-    performance: 4,
-    minHoursPerWeek: 34,
-    maxHoursPerWeek: 42,
-    availability: [{ startMin: T(15), endMin: T(24, 30) }],
-  },
-  {
-    name: "Nicole W", // Tracks ID: 1279 — mid/close, long shifts, weekly 46:30
-    employmentType: "FULL_TIME",
-    isManager: true,
-    performance: 5,
-    minHoursPerWeek: 40,
-    maxHoursPerWeek: 48,
-    availability: [{ startMin: T(9), endMin: T(24, 30) }],
+    minHoursPerWeek: 50,
+    maxHoursPerWeek: 50,
+    availability: [{ startMin: T(5), endMin: T(24, 30), days: [0, 1, 2, 3, 4] }],
+    hardSets: [{ days: [1], startMin: T(14), endMin: T(24, 30) }],
   },
 
   // ---- Full-time crew ----------------------------------------------------
   {
-    name: "Adalynn W", // Tracks ID: 1431 — mid/close, weekly 37:30
+    name: "Adalynn W", // Tracks ID: 1431
     employmentType: "FULL_TIME",
-    performance: 4,
-    minHoursPerWeek: 32,
-    maxHoursPerWeek: 40,
+    performance: 5,
+    minHoursPerWeek: 30,
+    maxHoursPerWeek: 35,
     availability: [{ startMin: T(9), endMin: T(24) }],
   },
   {
-    name: "Benedicta A", // Tracks ID: 1438 — opener with some closes, weekly 40:00
+    name: "Benedicta A", // Tracks ID: 1438
     employmentType: "FULL_TIME",
     performance: 4,
     minHoursPerWeek: 32,
@@ -99,7 +100,7 @@ const crew: Seed[] = [
     availability: [{ startMin: T(6), endMin: T(24) }],
   },
   {
-    name: "James M", // Tracks ID: 1430 — opener (5 AM–12 PM), weekly 34:00
+    name: "James M", // Tracks ID: 1430
     employmentType: "FULL_TIME",
     performance: 4,
     minHoursPerWeek: 30,
@@ -107,7 +108,7 @@ const crew: Seed[] = [
     availability: [{ startMin: T(5), endMin: T(14) }],
   },
   {
-    name: "Kole K", // Tracks ID: 1359 — closer, weekly 32:30
+    name: "Kole K", // Tracks ID: 1359
     employmentType: "FULL_TIME",
     performance: 4,
     minHoursPerWeek: 28,
@@ -115,7 +116,7 @@ const crew: Seed[] = [
     availability: [{ startMin: T(14), endMin: T(24, 30) }],
   },
   {
-    name: "Nahidul I", // Tracks ID: 1402 — mid/close, weekly 38:30
+    name: "Nahidul I", // Tracks ID: 1402
     employmentType: "FULL_TIME",
     performance: 4,
     minHoursPerWeek: 32,
@@ -123,15 +124,16 @@ const crew: Seed[] = [
     availability: [{ startMin: T(8), endMin: T(24) }],
   },
   {
-    name: "Sakeenah Q", // Tracks ID: 1444 — open-to-close flexible, weekly 33:30
+    name: "Sakeenah Q", // Tracks ID: 1444 — now a minor
     employmentType: "FULL_TIME",
+    isMinor: true,
     performance: 4,
     minHoursPerWeek: 30,
     maxHoursPerWeek: 40,
     availability: [{ startMin: T(5), endMin: T(24) }],
   },
   {
-    name: "Trevor M", // Tracks ID: 1429 — opener, weekly 33:30
+    name: "Trevor M", // Tracks ID: 1429
     employmentType: "FULL_TIME",
     performance: 4,
     minHoursPerWeek: 32,
@@ -139,61 +141,73 @@ const crew: Seed[] = [
     availability: [{ startMin: T(5), endMin: T(17) }],
   },
   {
-    name: "Tristan H", // Tracks ID: 1424 — closer, weekly 35:15
+    name: "Tristan H", // Tracks ID: 1424
     employmentType: "FULL_TIME",
-    performance: 3,
-    minHoursPerWeek: 30,
+    performance: 1,
+    minHoursPerWeek: 0,
     maxHoursPerWeek: 40,
-    availability: [{ startMin: T(16), endMin: T(24, 30) }],
+    availability: [{ startMin: T(5), endMin: T(24, 30) }],
   },
 
   // ---- Part-time crew ----------------------------------------------------
   {
-    name: "aja j", // Tracks ID: 1439 — mid/close, weekly 21:30
+    name: "aja j", // Tracks ID: 1439
     employmentType: "PART_TIME",
     performance: 3,
-    maxHoursPerWeek: 24,
+    maxHoursPerWeek: 20,
     availability: [{ startMin: T(12), endMin: T(22) }],
   },
   {
-    name: "Daisy B", // Tracks ID: 0010 — mid, weekly 14:30
+    name: "Daisy B", // Tracks ID: 0010
     employmentType: "PART_TIME",
     performance: 3,
     maxHoursPerWeek: 20,
     availability: [{ startMin: T(11), endMin: T(22) }],
   },
   {
-    name: "Easton V", // Tracks ID: 1360 — short evening shifts, weekly 17:30
+    name: "Easton V", // Tracks ID: 1360 — Wed–Fri evenings
     employmentType: "PART_TIME",
-    performance: 3,
+    performance: 4,
     maxHoursPerWeek: 18,
-    availability: [{ startMin: T(16), endMin: T(23) }],
+    availability: [{ startMin: T(16), endMin: T(23), days: [2, 3, 4] }],
+    hardSets: [
+      { days: [2, 3], startMin: T(17, 30), endMin: T(22, 30) },
+      { days: [4], startMin: T(16, 30), endMin: T(22, 30) },
+    ],
   },
   {
-    name: "Eraj G", // Tracks ID: 1437 — mid, weekly 17:30
+    name: "Eraj G", // Tracks ID: 1437 — inactive
     employmentType: "PART_TIME",
+    active: false,
     performance: 3,
     maxHoursPerWeek: 20,
     availability: [{ startMin: T(10), endMin: T(18) }],
   },
   {
-    name: "Isaiah K", // Tracks ID: 1428 — evening, weekly ~5:30
+    name: "Isaiah K", // Tracks ID: 1428
     employmentType: "PART_TIME",
-    performance: 2,
+    performance: 5,
     maxHoursPerWeek: 16,
     availability: [{ startMin: T(17), endMin: T(24) }],
   },
   {
-    name: "Jonathan H", // Tracks ID: 1339 — evening, weekly 9:00
+    name: "Jonathan H", // Tracks ID: 1339 — Tue & Thu late
     employmentType: "PART_TIME",
-    performance: 3,
-    maxHoursPerWeek: 16,
-    availability: [{ startMin: T(18), endMin: T(24, 30) }],
+    performance: 4,
+    maxHoursPerWeek: 9,
+    availability: [
+      { startMin: T(20), endMin: T(24, 30), days: [1] },
+      { startMin: T(19), endMin: T(23, 30), days: [3] },
+    ],
+    hardSets: [
+      { days: [1], startMin: T(20), endMin: T(24, 30) },
+      { days: [3], startMin: T(19), endMin: T(23, 30) },
+    ],
   },
   {
-    name: "Reese P", // Tracks ID: 1422 — mid/close, weekly 19:00
+    name: "Reese P", // Tracks ID: 1422
     employmentType: "PART_TIME",
-    performance: 3,
+    performance: 4,
     maxHoursPerWeek: 22,
     availability: [{ startMin: T(11), endMin: T(22) }],
   },
@@ -229,6 +243,7 @@ async function main() {
         isManager: (s.isManager ?? false) || (s.isGM ?? false),
         isGM: s.isGM ?? false,
         isMinor: s.isMinor ?? false,
+        active: s.active ?? true,
         performance: s.performance,
         minHoursPerWeek: s.minHoursPerWeek ?? null,
         maxHoursPerWeek: s.maxHoursPerWeek ?? null,

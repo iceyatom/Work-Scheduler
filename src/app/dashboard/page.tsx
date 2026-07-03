@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button, Card, Spinner, Badge, ErrorBanner, ConfirmDialog } from "@/components/ui";
 import { ConstraintsModal } from "@/components/ConstraintsModal";
+import { GeneratingOverlay } from "@/components/GeneratingOverlay";
 import { getJSON, sendJSON } from "@/lib/client";
 import { mondayOf, isoDate } from "@/lib/time";
 import { DEFAULT_CONSTRAINTS, type ConstraintConfig } from "@/lib/constants";
@@ -241,6 +242,8 @@ export default function DashboardPage() {
           </ul>
         )}
       </Card>
+
+      {generating && <GeneratingOverlay message="The CP-SAT solver is building your schedule. Please don't navigate away or refresh until it finishes." />}
 
       {showConstraints && (
         <ConstraintsModal
