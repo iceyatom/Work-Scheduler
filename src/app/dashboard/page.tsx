@@ -4,8 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button, Card, Spinner, Badge, ErrorBanner, ConfirmDialog } from "@/components/ui";
+import { ConstraintsModal } from "@/components/ConstraintsModal";
+import { GeneratingOverlay } from "@/components/GeneratingOverlay";
 import { getJSON, sendJSON } from "@/lib/client";
 import { mondayOf, isoDate } from "@/lib/time";
+import { DEFAULT_CONSTRAINTS, type ConstraintConfig } from "@/lib/constants";
 import type { ScheduleSummary } from "@/lib/view-types";
 import type { GapItem } from "@/lib/types";
 
@@ -25,6 +28,10 @@ export default function DashboardPage() {
 
   const [name, setName] = useState("Weekly schedule");
   const [weekStart, setWeekStart] = useState(() => isoDate(mondayOf(new Date())));
+  // Solver constraints for the next generated schedule (defaults until customized).
+  const [constraints, setConstraints] = useState<ConstraintConfig>(DEFAULT_CONSTRAINTS);
+  const [showConstraints, setShowConstraints] = useState(false);
+  const isCustomConstraints = JSON.stringify(constraints) !== JSON.stringify(DEFAULT_CONSTRAINTS);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // Ids queued for deletion — drives the confirmation modal. Works for both a
@@ -64,7 +71,11 @@ export default function DashboardPage() {
     setGenerating(true);
     setError(null);
     try {
-      const schedule = await sendJSON<{ id: string }>("/api/schedules/generate", "POST", { name, weekStart });
+      const schedule = await sendJSON<{ id: string }>("/api/schedules/generate", "POST", {
+        name,
+        weekStart,
+        config: isCustomConstraints ? constraints : undefined,
+      });
       router.push(`/schedule/${schedule.id}`);
     } catch (e) {
       setError((e as Error).message);
@@ -147,6 +158,14 @@ export default function DashboardPage() {
               "Generate schedule"
             )}
           </Button>
+          <Button variant="secondary" onClick={() => setShowConstraints(true)} title="Customize the solver constraints for the next generated schedule">
+            ⚙ Customize constraints{isCustomConstraints ? " ✓" : ""}
+          </Button>
+          {isCustomConstraints && (
+            <button onClick={() => setConstraints(DEFAULT_CONSTRAINTS)} className="text-xs text-slate-400 hover:text-slate-600 hover:underline">
+              reset to defaults
+            </button>
+          )}
           {generating && <span className="text-sm text-slate-500">The CP-SAT solver may take a few seconds.</span>}
         </div>
         {(empCount ?? 0) === 0 && !loading && (
@@ -223,6 +242,19 @@ export default function DashboardPage() {
           </ul>
         )}
       </Card>
+
+      {generating && <GeneratingOverlay message="The CP-SAT solver is building your schedule. Please don't navigate away or refresh until it finishes." />}
+
+      {showConstraints && (
+        <ConstraintsModal
+          value={constraints}
+          onApply={(cfg) => {
+            setConstraints(cfg);
+            setShowConstraints(false);
+          }}
+          onClose={() => setShowConstraints(false)}
+        />
+      )}
 
       <ConfirmDialog
         open={pendingDelete !== null}

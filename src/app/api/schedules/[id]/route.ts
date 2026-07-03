@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { handle, notFound, ok, unauthorized } from "@/lib/api";
+import { scheduleUpdate } from "@/lib/schemas";
 import { getSessionAccount } from "@/lib/auth";
 
 export const runtime = "nodejs";
@@ -35,6 +36,17 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     }));
 
     return ok({ schedule, assignments: schedule.assignments, employees: employeesLite });
+  });
+}
+
+// Rename a schedule from the editor header. Independent of assignment edits.
+export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+  return handle(async () => {
+    const account = await getSessionAccount();
+    if (!account) return unauthorized();
+    const { name } = scheduleUpdate.parse(await req.json());
+    const result = await prisma.schedule.updateMany({ where: { id: params.id, accountId: account.id }, data: { name } });
+    return result.count ? ok({ id: params.id, name }) : notFound("Schedule not found");
   });
 }
 

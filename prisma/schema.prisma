@@ -151,6 +151,9 @@ model Schedule {
   // Stable keys (see src/lib/gap-key.ts) of gaps the user has dismissed; hidden
   // from the grid/timeline/active gap report but restorable from the gap report.
   dismissedGaps String[] @default([])
+  // The StoreConfig (solver constraints) this schedule was generated with. Null =
+  // the built-in defaults. Reused on re-solve and for the live gap report.
+  config Json?
 
   assignments Assignment[]
   jobs        Job[]

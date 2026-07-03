@@ -19,7 +19,7 @@ import {
   STORE_CLOSE_MIN,
   STORE_OPEN_MIN,
 } from "@/lib/constants";
-import { formatMinutesShort, snapToSlot } from "@/lib/time";
+import { formatMinutesShort, hoursFromMin, snapToSlot } from "@/lib/time";
 import { coverageForDay, deriveShift, validateShift, type EmployeeLite, type ShiftLite } from "@/lib/validation";
 import { DayGapsPanel } from "@/components/DayGapsPanel";
 import type { GapItem } from "@/lib/types";
@@ -369,7 +369,7 @@ export function TimelineView({
                           isSaving && "opacity-70",
                         )}
                         style={{ left: `${pct(startMin)}%`, width: `${pct(endMin) - pct(startMin)}%` }}
-                        title={`${formatMinutesShort(startMin)}-${formatMinutesShort(endMin)}`}
+                        title={`${formatMinutesShort(startMin)}-${formatMinutesShort(endMin)} · ${hoursFromMin(duration)}h in store`}
                       >
                         {onShiftChange && (
                           <>
@@ -388,7 +388,7 @@ export function TimelineView({
                           </>
                         )}
                         <span className="pointer-events-none absolute inset-0 flex items-center justify-center truncate px-3">
-                          {isSaving ? "Saving..." : `${formatMinutesShort(startMin)}-${formatMinutesShort(endMin)}`}
+                          {isSaving ? "Saving..." : `${formatMinutesShort(startMin)}-${formatMinutesShort(endMin)} · ${hoursFromMin(duration)}h`}
                         </span>
                         {breaks.map((b) => (
                           <div

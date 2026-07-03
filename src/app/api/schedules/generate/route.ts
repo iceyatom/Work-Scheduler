@@ -14,7 +14,7 @@ export async function POST(req: Request) {
     const account = await getSessionAccount();
     if (!account) return unauthorized();
     const body = generateInput.parse(await req.json());
-    const schedule = await generateSchedule({ name: body.name, weekStartISO: body.weekStart, accountId: account.id });
+    const schedule = await generateSchedule({ name: body.name, weekStartISO: body.weekStart, accountId: account.id, config: body.config });
     return ok(schedule, { status: 201 });
   });
 }
