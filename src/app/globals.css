@@ -2,8 +2,102 @@
 @tailwind components;
 @tailwind utilities;
 
+/* --- Theme palette -----------------------------------------------------------
+   RGB triplets consumed by tailwind.config.ts via rgb(var(--x) / <alpha>).
+   Light values match Tailwind's stock palette so light mode is unchanged;
+   html.dark flips them. Keep the two blocks' keys in sync. */
 :root {
   color-scheme: light;
+
+  --surface: 255 255 255;
+
+  --brand: 91 33 182;
+  --brand-dark: 76 29 149;
+  --brand-light: 237 233 254;
+
+  --slate-50: 248 250 252;
+  --slate-100: 241 245 249;
+  --slate-200: 226 232 240;
+  --slate-300: 203 213 225;
+  --slate-400: 148 163 184;
+  --slate-500: 100 116 139;
+  --slate-600: 71 85 105;
+  --slate-700: 51 65 85;
+  --slate-800: 30 41 59;
+  --slate-900: 15 23 42;
+
+  --red-50: 254 242 242;
+  --red-100: 254 226 226;
+  --red-200: 254 202 202;
+  --red-700: 185 28 28;
+  --red-800: 153 27 27;
+
+  --amber-50: 255 251 235;
+  --amber-100: 254 243 199;
+  --amber-200: 253 230 138;
+  --amber-700: 180 83 9;
+  --amber-800: 146 64 14;
+
+  --emerald-50: 236 253 245;
+  --emerald-100: 209 250 229;
+  --emerald-200: 167 243 208;
+  --emerald-700: 4 120 87;
+  --emerald-800: 6 95 70;
+
+  --green-100: 220 252 231;
+  --green-700: 21 128 61;
+
+  --blue-100: 219 234 254;
+  --blue-700: 29 78 216;
+}
+
+/* Dark palette. Wrapped in "not print" so printing always uses light colors,
+   even when the app is in dark mode. */
+@media not print {
+  html.dark {
+    color-scheme: dark;
+
+    --surface: 23 32 48;
+
+    --brand: 139 92 246;
+    --brand-dark: 196 181 253;
+    --brand-light: 55 41 100;
+
+    --slate-50: 11 18 32;
+    --slate-100: 30 41 59;
+    --slate-200: 51 65 85;
+    --slate-300: 71 85 105;
+    --slate-400: 125 139 161;
+    --slate-500: 148 163 184;
+    --slate-600: 179 191 207;
+    --slate-700: 203 213 225;
+    --slate-800: 226 232 240;
+    --slate-900: 241 245 249;
+
+    --red-50: 45 20 26;
+    --red-100: 74 26 33;
+    --red-200: 127 29 29;
+    --red-700: 252 165 165;
+    --red-800: 254 202 202;
+
+    --amber-50: 44 32 12;
+    --amber-100: 71 51 16;
+    --amber-200: 146 64 14;
+    --amber-700: 252 211 77;
+    --amber-800: 253 230 138;
+
+    --emerald-50: 15 39 31;
+    --emerald-100: 20 56 44;
+    --emerald-200: 6 95 70;
+    --emerald-700: 110 231 183;
+    --emerald-800: 167 243 208;
+
+    --green-100: 21 55 37;
+    --green-700: 134 239 172;
+
+    --blue-100: 21 38 78;
+    --blue-700: 147 197 253;
+  }
 }
 
 body {
@@ -35,6 +129,84 @@ body {
   background-size: 300% 300%;
   animation: gradientShift 16s ease infinite;
 }
+html.dark .animated-gradient {
+  background: linear-gradient(120deg, #191536, #131126, #1a1f45, #191536);
+  background-size: 300% 300%;
+}
+
+/* --- Feature-preview mini animations (FeaturePreviews.tsx) ----------------
+   All previews loop on a shared 8s cycle; elements differ only in delay. */
+@keyframes pvCascade {
+  0%       { opacity: 0; transform: translateY(6px) scale(0.85); }
+  6%, 88%  { opacity: 1; transform: translateY(0) scale(1); }
+  96%, 100% { opacity: 0; transform: translateY(0) scale(1); }
+}
+.pv-cascade {
+  opacity: 0;
+  animation: pvCascade 8s ease-out infinite;
+}
+
+/* Validation preview: a shift bar stretches past close, then snaps back. */
+@keyframes pvStretch {
+  0%, 8%    { width: 42%; }
+  20%, 58%  { width: 88%; }   /* dragged into the closed zone */
+  70%, 100% { width: 62%; }   /* snapped back to a legal length */
+}
+.pv-stretch { animation: pvStretch 8s ease-in-out infinite; }
+@keyframes pvWarn {
+  0%, 22%   { opacity: 0; transform: translateY(4px); }
+  28%, 60%  { opacity: 1; transform: translateY(0); }
+  66%, 100% { opacity: 0; transform: translateY(-2px); }
+}
+.pv-warn { opacity: 0; animation: pvWarn 8s ease-out infinite; }
+@keyframes pvOk {
+  0%, 72%   { opacity: 0; transform: translateY(4px); }
+  78%, 94%  { opacity: 1; transform: translateY(0); }
+  100%      { opacity: 0; }
+}
+.pv-ok { opacity: 0; animation: pvOk 8s ease-out infinite; }
+
+/* Gap-report preview: red/amber dots "resolve" to green, then the export pill. */
+@keyframes pvDotBad {
+  0%, 34%   { opacity: 1; }
+  40%, 100% { opacity: 0; }
+}
+@keyframes pvDotGood {
+  0%, 34%   { opacity: 0; transform: scale(0.5); }
+  40%, 100% { opacity: 1; transform: scale(1); }
+}
+.pv-dot-bad  { animation: pvDotBad 8s linear infinite; }
+.pv-dot-good { opacity: 0; animation: pvDotGood 8s ease-out infinite; }
+@keyframes pvLate {
+  0%, 58%   { opacity: 0; transform: translateY(6px) scale(0.9); }
+  66%, 90%  { opacity: 1; transform: translateY(0) scale(1); }
+  98%, 100% { opacity: 0; }
+}
+.pv-late { opacity: 0; animation: pvLate 8s ease-out infinite; }
+
+/* Solver preview: a sweeping "search" beam behind the placed shifts. */
+@keyframes pvSweep {
+  0%   { left: -12%; opacity: 0; }
+  6%   { opacity: 1; }
+  44%  { opacity: 1; }
+  50%, 100% { left: 104%; opacity: 0; }
+}
+.pv-sweep { animation: pvSweep 8s ease-in-out infinite; }
+
+/* --- Tutorial spotlight (src/app/tutorial) --------------------------------
+   .tut-dim punches a hole in a full-stage dim layer via a huge box-shadow
+   (clipped by the stage's overflow-hidden); .tut-ring pulses attention. */
+.tut-dim {
+  box-shadow: 0 0 0 9999px rgb(2 6 23 / 0.55);
+}
+html.dark .tut-dim {
+  box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.65);
+}
+@keyframes tutRing {
+  0%, 100% { box-shadow: 0 0 0 3px rgb(var(--brand) / 0.6); }
+  50%      { box-shadow: 0 0 0 8px rgb(var(--brand) / 0.15); }
+}
+.tut-ring { animation: tutRing 1.8s ease-in-out infinite; }
 
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-up,
@@ -43,6 +215,17 @@ body {
     animation: none;
     opacity: 1;
   }
+  .tut-ring {
+    animation: none;
+    box-shadow: 0 0 0 3px rgb(var(--brand) / 0.6);
+  }
+  .pv-cascade, .pv-stretch, .pv-warn, .pv-ok, .pv-dot-bad, .pv-dot-good, .pv-late, .pv-sweep {
+    animation: none;
+  }
+  /* Freeze each preview on its resolved end state. */
+  .pv-cascade, .pv-ok, .pv-dot-good, .pv-late { opacity: 1; }
+  .pv-warn, .pv-dot-bad, .pv-sweep { opacity: 0; }
+  .pv-stretch { width: 62%; }
 }
 
 /* Thin scrollbars for the timeline / grid scroll areas. */

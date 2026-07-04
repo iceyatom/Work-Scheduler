@@ -50,7 +50,7 @@ export function AuthPanel() {
   }
 
   return (
-    <div className="w-full rounded-2xl border border-slate-200 bg-white p-6 shadow-xl sm:p-8">
+    <div className="w-full rounded-2xl border border-slate-200 bg-surface p-6 shadow-xl sm:p-8">
       <div className="mb-5 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 text-sm font-medium">
         {(["login", "register"] as Mode[]).map((m) => (
           <button
@@ -60,7 +60,7 @@ export function AuthPanel() {
               setMode(m);
               setErrors([]);
             }}
-            className={clsx("rounded-md py-2 transition-colors", mode === m ? "bg-white text-brand-dark shadow-sm" : "text-slate-500 hover:text-slate-700")}
+            className={clsx("rounded-md py-2 transition-colors", mode === m ? "bg-surface text-brand-dark shadow-sm" : "text-slate-500 hover:text-slate-700")}
           >
             {m === "login" ? "Log in" : "Create account"}
           </button>

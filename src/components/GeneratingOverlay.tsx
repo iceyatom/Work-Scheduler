@@ -29,7 +29,7 @@ export function GeneratingOverlay({ title = "Generating schedule…", message }:
 
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm" role="alertdialog" aria-modal="true" aria-busy="true">
-      <div className="mx-4 flex w-full max-w-sm flex-col items-center gap-4 rounded-xl bg-white px-8 py-10 text-center shadow-xl">
+      <div className="mx-4 flex w-full max-w-sm flex-col items-center gap-4 rounded-xl bg-surface px-8 py-10 text-center shadow-xl">
         <Spinner className="h-12 w-12 text-brand" />
         <div>
           <p className="text-base font-semibold text-slate-900">{title}</p>

@@ -10,10 +10,11 @@ export function Button({
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "ghost" | "danger" }) {
   const variants = {
-    primary: "bg-brand text-white hover:bg-brand-dark disabled:bg-slate-300",
-    secondary: "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 disabled:opacity-50",
+    // brand-dark/red-700 flip to light text shades in dark mode, so hovers need explicit dark: overrides.
+    primary: "bg-brand text-white hover:bg-brand-dark dark:hover:bg-violet-600 disabled:bg-slate-300",
+    secondary: "bg-surface text-slate-700 border border-slate-300 hover:bg-slate-50 disabled:opacity-50",
     ghost: "text-slate-600 hover:bg-slate-100 disabled:opacity-50",
-    danger: "bg-red-600 text-white hover:bg-red-700 disabled:bg-slate-300",
+    danger: "bg-red-600 text-white hover:bg-red-700 dark:hover:bg-red-500 disabled:bg-slate-300",
   };
   return (
     <button
@@ -30,7 +31,7 @@ export function Button({
 }
 
 export function Card({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={clsx("rounded-xl border border-slate-200 bg-white shadow-sm", className)}>{children}</div>;
+  return <div className={clsx("rounded-xl border border-slate-200 bg-surface shadow-sm", className)}>{children}</div>;
 }
 
 export function Spinner({ className }: { className?: string }) {
@@ -98,7 +99,7 @@ export function ConfirmDialog({
       role="dialog"
       aria-modal="true"
     >
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-md rounded-xl bg-surface p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start gap-4">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
             <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

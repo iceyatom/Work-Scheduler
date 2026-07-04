@@ -80,7 +80,7 @@ export function GridEditor({
             const weekly = weeklyPaidMinutes(assignments, emp.id);
             return (
               <tr key={emp.id} className="border-t border-slate-100">
-                <td className="sticky left-0 z-10 bg-white px-3 py-2">
+                <td className="sticky left-0 z-10 bg-surface px-3 py-2">
                   <div className="flex items-center gap-1.5">
                     <span className="font-medium text-slate-900">{emp.name}</span>
                     {emp.isGM ? <Badge color="purple">GM</Badge> : emp.isManager && <Badge color="purple">Mgr</Badge>}
