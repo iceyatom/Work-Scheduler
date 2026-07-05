@@ -1,6 +1,7 @@
 "use client";
 
 import clsx from "clsx";
+import { ExportIcon, LockIcon, PrinterIcon } from "@/components/icons";
 
 /* Simulated (static, data-free) versions of the real app screens, used by the
    /tutorial walkthrough. Elements a tutorial step can spotlight carry a
@@ -111,7 +112,11 @@ function MockEmployees() {
             </div>
             <div className="mt-0.5 text-xs text-slate-500">
               {e.avail}
-              {e.hardSets > 0 && <span className="ml-2 text-brand-dark">🔒 {e.hardSets} hard-set shift</span>}
+              {e.hardSets > 0 && (
+                <span className="ml-2 inline-flex items-center gap-0.5 text-brand-dark">
+                  <LockIcon className="h-3 w-3" /> {e.hardSets} hard-set shift
+                </span>
+              )}
             </div>
           </div>
         ))}
@@ -154,7 +159,9 @@ function MockEmployeeForm() {
             <Chip className="bg-emerald-100 text-emerald-800">Sat 8:00–12:30 AM</Chip>
           </FormRow>
           <FormRow label="Hard-set shifts" tut="hard-sets">
-            <Chip className="bg-brand-light text-brand-dark">🔒 Fri 16:00–20:00</Chip>
+            <Chip className="gap-1 bg-brand-light text-brand-dark">
+              <LockIcon className="h-2.5 w-2.5" /> Fri 16:00–20:00
+            </Chip>
             <span className="text-slate-400">always scheduled exactly as entered</span>
           </FormRow>
         </div>
@@ -179,7 +186,7 @@ function MockScheduleShell({ activeTab, children }: { activeTab: (typeof TABS)[n
         </div>
         <div className="flex items-center gap-1.5">
           <MockButton tut="print" variant="secondary">
-            🖨 Print
+            <PrinterIcon /> Print
           </MockButton>
           <MockButton tut="queue-changes" variant="secondary">
             Queue changes
@@ -208,12 +215,14 @@ function MockScheduleShell({ activeTab, children }: { activeTab: (typeof TABS)[n
   );
 }
 
+type GridCell = { time: string; locked?: boolean } | null;
+
 const GRID_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
-const GRID_ROWS: { name: string; mgr?: boolean; cells: (string | null)[] }[] = [
-  { name: "Nicole W", mgr: true, cells: ["5:00–15:30", null, "5:00–15:30", "11:00–21:30", null] },
-  { name: "Dianna R", mgr: true, cells: [null, "14:30–12:30", "15:00–1:00", null, "5:00–13:30"] },
-  { name: "Marcus T", cells: ["7:00–15:00", "11:00–19:30", null, "16:00–12:30", "11:00–19:30"] },
-  { name: "Jaden P", cells: [null, "15:00–19:00", null, "🔒 16:00–20:00", null] },
+const GRID_ROWS: { name: string; mgr?: boolean; cells: GridCell[] }[] = [
+  { name: "Nicole W", mgr: true, cells: [{ time: "5:00–15:30" }, null, { time: "5:00–15:30" }, { time: "11:00–21:30" }, null] },
+  { name: "Dianna R", mgr: true, cells: [null, { time: "14:30–12:30" }, { time: "15:00–1:00" }, null, { time: "5:00–13:30" }] },
+  { name: "Marcus T", cells: [{ time: "7:00–15:00" }, { time: "11:00–19:30" }, null, { time: "16:00–12:30" }, { time: "11:00–19:30" }] },
+  { name: "Jaden P", cells: [null, { time: "15:00–19:00" }, null, { time: "16:00–20:00", locked: true }, null] },
 ];
 
 function MockGrid() {
@@ -235,15 +244,16 @@ function MockGrid() {
               {c ? (
                 <span
                   className={clsx(
-                    "block truncate rounded px-1 py-1 text-center font-medium",
-                    c.startsWith("🔒")
+                    "flex items-center justify-center gap-0.5 truncate rounded px-1 py-1 text-center font-medium",
+                    c.locked
                       ? "bg-brand-light text-brand-dark"
                       : r.mgr
                         ? "bg-brand/90 text-white"
                         : "bg-emerald-100 text-emerald-800",
                   )}
                 >
-                  {c}
+                  {c.locked && <LockIcon className="h-2.5 w-2.5 shrink-0" />}
+                  {c.time}
                 </span>
               ) : (
                 <span className="block rounded border border-dashed border-slate-200 py-1 text-center text-slate-300">—</span>
@@ -314,7 +324,7 @@ function MockReport() {
         <div className="mt-2 text-center text-[10px] text-slate-400">Optimized for the printed Tracks sheet — start day Wednesday</div>
       </div>
       <div data-tut="export-csv" className="flex items-center justify-center gap-1.5 rounded-lg bg-brand-light px-3 py-2 text-xs font-semibold text-brand-dark">
-        ⬇ Download Tracks import file (CSV)
+        <ExportIcon /> Download Tracks import file (CSV)
       </div>
     </div>
   );

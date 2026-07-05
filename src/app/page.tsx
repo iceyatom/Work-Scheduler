@@ -5,28 +5,29 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AuthPanel } from "@/components/AuthPanel";
 import { GapExportPreview, ManagersFirstPreview, SolverPreview, ValidationPreview } from "@/components/FeaturePreviews";
+import { ManagersIcon, ReportIcon, SolverIcon, ValidationIcon } from "@/components/icons";
 
 const FEATURES = [
   {
-    icon: "🧩",
+    icon: <SolverIcon />,
     title: "Constraint-based solver",
     desc: "OR-Tools CP-SAT builds an optimal weekly schedule honoring coverage, labor, and shift rules.",
     preview: <SolverPreview />,
   },
   {
-    icon: "👔",
+    icon: <ManagersIcon />,
     title: "Managers first",
     desc: "Managers and the GM are placed first for even, gap-free coverage, then crew fill in around them.",
     preview: <ManagersFirstPreview />,
   },
   {
-    icon: "🛠️",
+    icon: <ValidationIcon />,
     title: "Edit with live validation",
     desc: "Drag shifts in the grid or slider editor and see rule violations the instant they happen.",
     preview: <ValidationPreview />,
   },
   {
-    icon: "📋",
+    icon: <ReportIcon />,
     title: "Gap report & Tracks export",
     desc: "See exactly what's unmet, then export an import-ready file for Taco Bell Tracks.",
     preview: <GapExportPreview />,
@@ -110,7 +111,7 @@ export default function LandingPage() {
             >
               {f.preview}
               <div className="mt-4 flex items-start gap-3">
-                <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-brand-light text-2xl">{f.icon}</div>
+                <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-brand-light text-brand-dark [&_svg]:h-6 [&_svg]:w-6">{f.icon}</div>
                 <div>
                   <h3 className="font-semibold text-slate-900">{f.title}</h3>
                   <p className="mt-1 text-sm text-slate-500">{f.desc}</p>

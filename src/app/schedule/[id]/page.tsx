@@ -11,6 +11,7 @@ import { GapReportView } from "@/components/GapReportView";
 import { SliderEditor } from "@/components/SliderEditor";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ChangeQueueModal } from "@/components/ChangeQueueModal";
+import { ExportIcon, PrinterIcon } from "@/components/icons";
 import { getJSON, sendJSON } from "@/lib/client";
 import { dateForDay } from "@/lib/schedule-helpers";
 import { computeGapReport, deriveShift, type EmployeeLite, type ShiftLite } from "@/lib/validation";
@@ -354,11 +355,11 @@ export default function SchedulePage({ params }: { params: { id: string } }) {
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => window.open(`/api/schedules/${params.id}/export`, "_blank")}>
-              ⬇ Tracks export
+              <ExportIcon /> Tracks export
             </Button>
             {tab === "report" && (
               <Button variant="secondary" onClick={() => window.print()}>
-                🖨 Print
+                <PrinterIcon /> Print
               </Button>
             )}
             <Button variant="secondary" onClick={() => setShowQueue(true)} title="Queue personnel changes for this schedule">

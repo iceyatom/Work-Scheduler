@@ -5,6 +5,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import { Button } from "@/components/ui";
 import { MockScreen, MockScreenId } from "@/components/TutorialMocks";
+import { FlagIcon, ManagersIcon, RefreshIcon, ExportIcon, RouteIcon, ValidationIcon, ZapIcon } from "@/components/icons";
 
 /* Guided, simulated walkthroughs. Each step points the spotlight at a
    data-tut target inside a MockScreen (see TutorialMocks.tsx) and explains it
@@ -19,7 +20,7 @@ interface Step {
 
 interface Tutorial {
   id: string;
-  icon: string;
+  icon: React.ReactNode;
   title: string;
   blurb: string;
   steps: Step[];
@@ -28,7 +29,7 @@ interface Tutorial {
 const TUTORIALS: Tutorial[] = [
   {
     id: "workflow",
-    icon: "🗺️",
+    icon: <RouteIcon />,
     title: "The full workflow",
     blurb: "Roster → generate → review → fix gaps → export. The whole loop, end to end.",
     steps: [
@@ -96,7 +97,7 @@ const TUTORIALS: Tutorial[] = [
   },
   {
     id: "employees",
-    icon: "👥",
+    icon: <ManagersIcon />,
     title: "Employees & availability",
     blurb: "Roles, weekly hour ranges, availability windows, and hard-set shifts.",
     steps: [
@@ -134,7 +135,7 @@ const TUTORIALS: Tutorial[] = [
   },
   {
     id: "generate",
-    icon: "⚡",
+    icon: <ZapIcon />,
     title: "Generate a schedule",
     blurb: "Label the week, tweak constraints if needed, and let the solver run.",
     steps: [
@@ -166,7 +167,7 @@ const TUTORIALS: Tutorial[] = [
   },
   {
     id: "edit",
-    icon: "✏️",
+    icon: <ValidationIcon />,
     title: "Edit shifts in the grid",
     blurb: "Adjust the generated schedule by hand with instant validation.",
     steps: [
@@ -180,7 +181,7 @@ const TUTORIALS: Tutorial[] = [
         screen: "schedule-grid",
         target: "grid-cell",
         title: "Click a cell to edit",
-        body: "Clicking a cell opens the slider editor for that shift. Purple 🔒 chips are hard-set shifts — locked to what you promised.",
+        body: "Clicking a cell opens the slider editor for that shift. Purple chips with a lock icon are hard-set shifts — locked to what you promised.",
       },
       {
         screen: "schedule-grid",
@@ -198,7 +199,7 @@ const TUTORIALS: Tutorial[] = [
   },
   {
     id: "gaps",
-    icon: "🚩",
+    icon: <FlagIcon />,
     title: "Read the gap report",
     blurb: "What the solver couldn't satisfy, ranked and explained.",
     steps: [
@@ -224,7 +225,7 @@ const TUTORIALS: Tutorial[] = [
   },
   {
     id: "changes",
-    icon: "🔄",
+    icon: <RefreshIcon />,
     title: "Personnel changes & re-solve",
     blurb: "Someone quit or changed availability? Queue it and re-solve.",
     steps: [
@@ -250,7 +251,7 @@ const TUTORIALS: Tutorial[] = [
   },
   {
     id: "export",
-    icon: "📤",
+    icon: <ExportIcon />,
     title: "Print & export",
     blurb: "The printable weekly sheet and the Tracks import file.",
     steps: [
@@ -334,7 +335,7 @@ function TutorialRunner({ tutorial, onExit }: { tutorial: Tutorial; onExit: () =
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="text-xl">{tutorial.icon}</span>
+          <span className="text-brand-dark [&_svg]:h-5 [&_svg]:w-5">{tutorial.icon}</span>
           <span className="font-semibold text-slate-900">{tutorial.title}</span>
           <span className="text-sm text-slate-500">
             · Step {idx + 1} of {tutorial.steps.length}
@@ -438,13 +439,17 @@ export default function TutorialPage() {
             className="mt-8 block w-full rounded-2xl border border-brand/30 bg-gradient-to-r from-brand-light to-surface p-6 text-left shadow-sm transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-md"
           >
             <div className="flex items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl">{TUTORIALS[0].icon}</span>
-                  <span className="text-lg font-bold text-slate-900">{TUTORIALS[0].title}</span>
-                  <span className="rounded-full bg-brand px-2 py-0.5 text-[10px] font-semibold text-white">START HERE</span>
+              <div className="flex items-start gap-3">
+                <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-surface text-brand-dark shadow-sm [&_svg]:h-6 [&_svg]:w-6">
+                  {TUTORIALS[0].icon}
                 </div>
-                <p className="mt-1 text-sm text-slate-600">{TUTORIALS[0].blurb}</p>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg font-bold text-slate-900">{TUTORIALS[0].title}</span>
+                    <span className="rounded-full bg-brand px-2 py-0.5 text-[10px] font-semibold text-white">START HERE</span>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-600">{TUTORIALS[0].blurb}</p>
+                </div>
               </div>
               <span className="shrink-0 text-sm font-semibold text-brand">
                 {TUTORIALS[0].steps.length} steps →
@@ -460,8 +465,8 @@ export default function TutorialPage() {
                 onClick={() => setActive(t)}
                 className="rounded-xl border border-slate-200 bg-surface p-4 text-left shadow-sm transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-md"
               >
-                <div className="text-2xl">{t.icon}</div>
-                <div className="mt-2 font-semibold text-slate-900">{t.title}</div>
+                <div className="grid h-11 w-11 place-items-center rounded-lg bg-brand-light text-brand-dark [&_svg]:h-6 [&_svg]:w-6">{t.icon}</div>
+                <div className="mt-3 font-semibold text-slate-900">{t.title}</div>
                 <p className="mt-1 text-sm text-slate-500">{t.blurb}</p>
                 <div className="mt-3 text-xs font-medium text-brand">{t.steps.length} steps →</div>
               </button>
