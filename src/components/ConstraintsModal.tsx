@@ -21,7 +21,7 @@ export function ConstraintsModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose} role="dialog" aria-modal="true">
-      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-xl bg-surface shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
           <div>
             <h3 className="text-lg font-semibold text-slate-900">Customize constraints</h3>
@@ -130,7 +130,7 @@ export function ConstraintsModal({
                       type="button"
                       onClick={() => set("schoolNights", on ? cfg.schoolNights.filter((x) => x !== i) : [...cfg.schoolNights, i].sort((a, b) => a - b))}
                       className={
-                        "rounded-md px-2.5 py-1 text-xs font-medium " + (on ? "bg-brand text-white" : "border border-slate-200 bg-white text-slate-500 hover:bg-slate-100")
+                        "rounded-md px-2.5 py-1 text-xs font-medium " + (on ? "bg-brand text-white" : "border border-slate-200 bg-surface text-slate-500 hover:bg-slate-100")
                       }
                     >
                       {d.slice(0, 3)}

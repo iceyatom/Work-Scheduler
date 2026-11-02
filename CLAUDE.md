@@ -83,16 +83,27 @@ src/lib/employee-validation.ts  # cross-field employee form validation (shared c
 src/lib/scheduling.ts    # orchestration: F-1 generate, F-2 resolve, gap recompute (account-scoped)
 src/lib/types.ts         # solver protocol types — MIRRORS solver/models.py
 src/lib/time.ts          # minute<->clock helpers, incl. parseStoreTime
+src/lib/theme.ts         # light/dark/system theme helpers (localStorage "ws-theme")
 src/app/api/auth/...     # register / login / logout / me
 src/app/api/...          # REST routes (employees, schedules, changes, export) — all account-scoped
-src/app/page.tsx         # PUBLIC landing page (hero + AuthPanel + features)
+src/app/page.tsx         # PUBLIC landing page (hero + AuthPanel + animated feature previews)
+src/app/tutorial/page.tsx    # PUBLIC guided walkthroughs (spotlight steps over TutorialMocks screens)
 src/app/dashboard/page.tsx   # the app dashboard (was /), auth-required
 src/app/{employees,changes,schedule/[id]}/page.tsx   # auth-required client pages
-src/components/          # GridEditor, TimelineView, PrintableReport, SliderEditor, EmployeeForm, GapReportView, AuthPanel, Nav, ui
+src/components/          # GridEditor, TimelineView, PrintableReport, SliderEditor, EmployeeForm, GapReportView, AuthPanel, Nav (incl. hamburger/theme menu), FeaturePreviews, TutorialMocks, ui
 ```
 
 ## Conventions & invariants
 
+- **Dark mode is palette-driven, not class-driven.** `tailwind.config.ts` maps
+  `slate`/`brand`/`surface` (and the light+text shades of red/amber/emerald/
+  green/blue) to CSS variables that `html.dark` flips in `globals.css`. So:
+  use `bg-surface` for card/panel backgrounds (**never `bg-white`** — plain
+  `white` stays literally white for text-on-brand buttons), and skip `dark:`
+  variants except where a remapped shade is reused as a *background* in dark
+  mode (e.g. `hover:bg-brand-dark` pairs with `dark:hover:bg-violet-600`).
+  Theme mode is set from the Nav hamburger menu; a pre-paint inline script in
+  `layout.tsx` mirrors `src/lib/theme.ts`. Print always renders light.
 - **Time = integer "minutes from midnight."** Store day is 5:00 AM (300) →
   12:30 AM next day (**1470**, i.e. 24:30). Times after midnight are >1440.
 - **`<input type=time>` only emits 00:00–23:59**, so 12:30 AM parses as 30, not

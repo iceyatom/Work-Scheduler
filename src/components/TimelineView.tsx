@@ -280,14 +280,14 @@ export function TimelineView({
             <button
               key={d}
               onClick={() => setDay(i)}
-              className={clsx("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium", i === day ? "bg-brand text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-100")}
+              className={clsx("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium", i === day ? "bg-brand text-white" : "border border-slate-200 bg-surface text-slate-600 hover:bg-slate-100")}
             >
               {d.slice(0, 3)}
               {c > 0 && (
                 <span
                   className={clsx(
                     "rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
-                    i === day ? "bg-white/25 text-white" : blk ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800",
+                    i === day ? "bg-surface/25 text-white" : blk ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800",
                   )}
                 >
                   {c}
@@ -364,7 +364,7 @@ export function TimelineView({
                         className={clsx(
                           "absolute inset-y-1 z-10 touch-none select-none rounded text-[10px] text-white shadow-sm",
                           onShiftChange && "cursor-grab active:cursor-grabbing",
-                          a.locked ? "bg-brand-dark" : "bg-emerald-600",
+                          a.locked ? "bg-brand-dark dark:bg-violet-700" : "bg-emerald-600",
                           preview && "ring-2 ring-slate-900/20",
                           isSaving && "opacity-70",
                         )}
@@ -377,13 +377,13 @@ export function TimelineView({
                               type="button"
                               aria-label="Adjust start time"
                               onPointerDown={(e) => beginDrag(e, a, "start")}
-                              className="absolute inset-y-0 left-0 z-10 w-2 cursor-ew-resize rounded-l bg-white/20 hover:bg-white/35"
+                              className="absolute inset-y-0 left-0 z-10 w-2 cursor-ew-resize rounded-l bg-surface/20 hover:bg-surface/35"
                             />
                             <button
                               type="button"
                               aria-label="Adjust end time"
                               onPointerDown={(e) => beginDrag(e, a, "end")}
-                              className="absolute inset-y-0 right-0 z-10 w-2 cursor-ew-resize rounded-r bg-white/20 hover:bg-white/35"
+                              className="absolute inset-y-0 right-0 z-10 w-2 cursor-ew-resize rounded-r bg-surface/20 hover:bg-surface/35"
                             />
                           </>
                         )}
@@ -393,7 +393,7 @@ export function TimelineView({
                         {breaks.map((b) => (
                           <div
                             key={b}
-                            className="pointer-events-none absolute inset-y-0 bg-white/40"
+                            className="pointer-events-none absolute inset-y-0 bg-surface/40"
                             style={{
                               left: `${((b - startMin) / duration) * 100}%`,
                               width: `${(30 / duration) * 100}%`,

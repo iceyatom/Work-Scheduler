@@ -1,14 +1,37 @@
 "use client";
 
 import { useEffect } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AuthPanel } from "@/components/AuthPanel";
+import { GapExportPreview, ManagersFirstPreview, SolverPreview, ValidationPreview } from "@/components/FeaturePreviews";
+import { ManagersIcon, ReportIcon, SolverIcon, ValidationIcon } from "@/components/icons";
 
 const FEATURES = [
-  { icon: "🧩", title: "Constraint-based solver", desc: "OR-Tools CP-SAT builds an optimal weekly schedule honoring coverage, labor, and shift rules." },
-  { icon: "👔", title: "Managers first", desc: "Managers and the GM are placed first for even, gap-free coverage, then crew fill in around them." },
-  { icon: "🛠️", title: "Edit with live validation", desc: "Drag shifts in the grid or slider editor and see rule violations the instant they happen." },
-  { icon: "📋", title: "Gap report & Tracks export", desc: "See exactly what's unmet, then export an import-ready file for Taco Bell Tracks." },
+  {
+    icon: <SolverIcon />,
+    title: "Constraint-based solver",
+    desc: "OR-Tools CP-SAT builds an optimal weekly schedule honoring coverage, labor, and shift rules.",
+    preview: <SolverPreview />,
+  },
+  {
+    icon: <ManagersIcon />,
+    title: "Managers first",
+    desc: "Managers and the GM are placed first for even, gap-free coverage, then crew fill in around them.",
+    preview: <ManagersFirstPreview />,
+  },
+  {
+    icon: <ValidationIcon />,
+    title: "Edit with live validation",
+    desc: "Drag shifts in the grid or slider editor and see rule violations the instant they happen.",
+    preview: <ValidationPreview />,
+  },
+  {
+    icon: <ReportIcon />,
+    title: "Gap report & Tracks export",
+    desc: "See exactly what's unmet, then export an import-ready file for Taco Bell Tracks.",
+    preview: <GapExportPreview />,
+  },
 ];
 
 const STATS = [
@@ -39,7 +62,7 @@ export default function LandingPage() {
         <div className="mx-auto grid max-w-7xl items-center gap-10 px-4 py-14 lg:grid-cols-2 lg:py-24">
           {/* Copy */}
           <div>
-            <span className="animate-fade-up inline-flex items-center rounded-full bg-white/70 px-3 py-1 text-xs font-medium text-brand-dark ring-1 ring-brand/20" style={{ animationDelay: "0ms" }}>
+            <span className="animate-fade-up inline-flex items-center rounded-full bg-surface/70 px-3 py-1 text-xs font-medium text-brand-dark ring-1 ring-brand/20" style={{ animationDelay: "0ms" }}>
               For quick-service restaurant managers
             </span>
             <h1 className="animate-fade-up mt-4 text-4xl font-extrabold leading-tight tracking-tight text-slate-900 sm:text-5xl" style={{ animationDelay: "80ms" }}>
@@ -57,6 +80,12 @@ export default function LandingPage() {
                 </div>
               ))}
             </dl>
+            <p className="animate-fade-up mt-6 text-sm text-slate-600" style={{ animationDelay: "320ms" }}>
+              New here?{" "}
+              <Link href="/tutorial" className="font-semibold text-brand underline-offset-2 hover:underline">
+                Take the interactive tutorial →
+              </Link>
+            </p>
           </div>
 
           {/* Auth */}
@@ -73,23 +102,28 @@ export default function LandingPage() {
         <p className="mx-auto mt-2 max-w-2xl text-center text-slate-500">
           Coverage targets, manager presence, minor labor laws, breaks, and days off — all handled, with a manager-friendly editor on top.
         </p>
-        <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-10 grid gap-6 sm:grid-cols-2">
           {FEATURES.map((f, i) => (
             <div
               key={f.title}
-              className="animate-fade-up rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-transform duration-200 hover:-translate-y-1 hover:shadow-md"
+              className="animate-fade-up rounded-xl border border-slate-200 bg-surface p-5 shadow-sm transition-transform duration-200 hover:-translate-y-1 hover:shadow-md"
               style={{ animationDelay: `${i * 90}ms` }}
             >
-              <div className="grid h-11 w-11 place-items-center rounded-lg bg-brand-light text-2xl">{f.icon}</div>
-              <h3 className="mt-4 font-semibold text-slate-900">{f.title}</h3>
-              <p className="mt-1 text-sm text-slate-500">{f.desc}</p>
+              {f.preview}
+              <div className="mt-4 flex items-start gap-3">
+                <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-brand-light text-brand-dark [&_svg]:h-6 [&_svg]:w-6">{f.icon}</div>
+                <div>
+                  <h3 className="font-semibold text-slate-900">{f.title}</h3>
+                  <p className="mt-1 text-sm text-slate-500">{f.desc}</p>
+                </div>
+              </div>
             </div>
           ))}
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-slate-200 bg-white">
+      <footer className="border-t border-slate-200 bg-surface">
         <div className="mx-auto max-w-7xl px-4 py-8 text-center text-sm text-slate-400">
           Work Schedule Generator · constraint-based scheduling for quick-service restaurants
         </div>

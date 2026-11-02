@@ -69,7 +69,7 @@ export function EmployeeForm({ initial, onClose, onSaved }: { initial: EmployeeD
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4" onClick={onClose}>
-      <div className="my-8 w-full max-w-2xl rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="my-8 w-full max-w-2xl rounded-xl bg-surface p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-semibold text-slate-900">{d.id ? "Edit employee" : "Add employee"}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600">

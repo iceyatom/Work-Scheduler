@@ -6,6 +6,7 @@ import { EmployeeForm, emptyDraft, type EmployeeDraft } from "@/components/Emplo
 import { getJSON, sendJSON } from "@/lib/client";
 import { DAY_NAMES } from "@/lib/constants";
 import { formatMinutesShort, hoursFromMin } from "@/lib/time";
+import { LockIcon } from "@/components/icons";
 
 interface ApiEmployee extends EmployeeDraft {
   id: string;
@@ -115,7 +116,10 @@ export default function EmployeesPage() {
                   </div>
                 )}
                 {e.hardSets && e.hardSets.length > 0 && (
-                  <div className="mt-1 text-brand-dark">🔒 {e.hardSets.length} hard-set shift{e.hardSets.length > 1 ? "s" : ""}</div>
+                  <div className="mt-1 flex items-center gap-1 text-brand-dark">
+                    <LockIcon className="h-3 w-3" />
+                    {e.hardSets.length} hard-set shift{e.hardSets.length > 1 ? "s" : ""}
+                  </div>
                 )}
               </div>
             </Card>

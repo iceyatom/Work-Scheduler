@@ -6,6 +6,7 @@ import { DAY_NAMES } from "@/lib/constants";
 import { formatMinutesShort, hoursFromMin } from "@/lib/time";
 import { dailyPaidMinutes, indexAssignments, weeklyPaidMinutes } from "@/lib/schedule-helpers";
 import { Badge } from "@/components/ui";
+import { LockIcon } from "@/components/icons";
 import { DayGapsPanel } from "@/components/DayGapsPanel";
 import type { GapItem } from "@/lib/types";
 import type { AssignmentRow, ScheduleDetail } from "@/lib/view-types";
@@ -80,7 +81,7 @@ export function GridEditor({
             const weekly = weeklyPaidMinutes(assignments, emp.id);
             return (
               <tr key={emp.id} className="border-t border-slate-100">
-                <td className="sticky left-0 z-10 bg-white px-3 py-2">
+                <td className="sticky left-0 z-10 bg-surface px-3 py-2">
                   <div className="flex items-center gap-1.5">
                     <span className="font-medium text-slate-900">{emp.name}</span>
                     {emp.isGM ? <Badge color="purple">GM</Badge> : emp.isManager && <Badge color="purple">Mgr</Badge>}
@@ -110,8 +111,12 @@ export function GridEditor({
                             <span className="font-medium tabular-nums">
                               {formatMinutesShort(a.startMin)}–{formatMinutesShort(a.endMin)}
                             </span>
-                            <span className="text-[10px] opacity-70" title="Time at the store (start to end, incl. unpaid break)">
-                              {hoursFromMin(a.endMin - a.startMin)}h{a.locked ? " · 🔒" : ""}
+                            <span
+                              className="flex items-center justify-center gap-0.5 text-[10px] opacity-70"
+                              title="Time at the store (start to end, incl. unpaid break)"
+                            >
+                              {hoursFromMin(a.endMin - a.startMin)}h
+                              {a.locked && <LockIcon className="h-2.5 w-2.5" />}
                             </span>
                             {cell.length > 1 && <span className="text-[10px] text-amber-600">+{cell.length - 1} more</span>}
                           </span>
